@@ -52,139 +52,103 @@ def render_header():
     </div>
     """, unsafe_allow_html=True)
 
-# ---------- 4️⃣ إعداد المسارات الذكية ----------
-# الحصول على المسار الرئيسي للمشروع (Root)
+# ---------- 4️⃣ إعداد المسارات بناءً على صورك ----------
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_PATH = BASE_DIR / "data" / "daily_sales_ready.csv"
-MODEL_PATH = BASE_DIR / "model" / "catboost_sales_model.pkl"
+
+# الأسماء مطابقة للصور بالضبط
+DATA_PATH = BASE_DIR / "data" / "daily_sales_ready.parquet"
+MODEL_PATH = BASE_DIR / "model" / "catboost_sales_model_v2.pkl"
+FEAT_PATH = BASE_DIR / "model" / "feature_names.pkl"
 
 # ---------- 5️⃣ تحميل البيانات والموديل ----------
 @st.cache_data
-def load_data():
-    if not DATA_PATH.exists():
-        st.error(f"❌ File not found at: {DATA_PATH}")
+def load_essentials():
+    if not DATA_PATH.exists() or not MODEL_PATH.exists():
+        st.error(f"❌ ملفات مفقودة! تأكد من وجود الموديل v2 والبيانات في GitHub.")
         st.stop()
-    df = pd.read_csv(DATA_PATH)
-    df['date'] = pd.to_datetime(df['date'])
-    return df
-
-@st.cache_resource
-def load_model():
-    if not MODEL_PATH.exists():
-        st.error(f"❌ Model not found at: {MODEL_PATH}")
-        st.stop()
-    return joblib.load(MODEL_PATH)
-
-# ---------- 6️⃣ منطق التوقع (Recursive Forecast) ----------
-def recursive_forecast(model, last_date, last_sales, days):
-    preds = []
-    current_sales = last_sales
-
-    for i in range(days):
-        next_date = last_date + timedelta(days=i+1)
-        # مصفوفة المدخلات للموديل (يجب أن تطابق ما تم في Colab)
-        features = np.array([[
-            next_date.day,
-            next_date.month,
-            next_date.weekday(),
-            current_sales
-        ]])
-        pred = model.predict(features)[0]
-        preds.append((next_date, pred))
-        current_sales = pred
-
-    return pd.DataFrame(preds, columns=["date", "forecast"])
-
-# ---------- 7️⃣ عرض الإحصائيات (Metrics) ----------
-def show_metrics(forecast_df):
-    c1, c2, c3 = st.columns(3)
     
-    avg_val = round(forecast_df['forecast'].mean(), 2)
-    max_val = round(forecast_df['forecast'].max(), 2)
-    min_val = round(forecast_df['forecast'].min(), 2)
+    # تحميل البيانات
+    df = pd.read_parquet(DATA_PATH)
+    # معالجة أسماء الأعمدة لتناسب الكود
+    if 'InvoiceDate' in df.columns:
+        df.rename(columns={'InvoiceDate': 'date'}, inplace=True)
+    if 'total_amount' in df.columns:
+        df.rename(columns={'total_amount': 'sales'}, inplace=True)
+    
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # تحميل الموديل وقائمة الميزات
+    model = joblib.load(MODEL_PATH)
+    feature_names = joblib.load(FEAT_PATH)
+    
+    return df, model, feature_names
 
-    c1.markdown(f"<div class='metric-card'><div class='metric-value'>${avg_val}</div><div class='metric-label'>Average Forecast</div></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-card'><div class='metric-value'>${max_val}</div><div class='metric-label'>Peak Sales</div></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-card'><div class='metric-value'>${min_val}</div><div class='metric-label'>Lowest Sales</div></div>", unsafe_allow_html=True)
+df, model, feature_names = load_essentials()
 
-# ---------- 8️⃣ الرسم البياني التفاعلي ----------
-def plot_chart(history_df, forecast_df):
+# ---------- 6️⃣ منطق التوقع الديناميكي (v2) ----------
+def generate_forecast(model, df_hist, features_list, start_lag1, days=30):
+    future_preds = []
+    last_date = df_hist['date'].max()
+    future_dates = pd.date_range(start=last_date + timedelta(days=1), periods=days)
+    
+    # نحتاج لآخر 30 مبيعة لحساب المتوسط المتحرك
+    history = list(df_hist['sales'].tail(30))
+    history[-1] = start_lag1 # تحديث القيمة بناءً على إدخال العميل
+    
+    for i in range(days):
+        d = future_dates[i]
+        # بناء الميزات بناءً على ما تدرب عليه الموديل v2
+        feat_dict = {
+            'day': d.day,
+            'month': d.month,
+            'dayofweek': d.dayofweek(),
+            'is_weekend': 1 if d.dayofweek() in [4, 5] else 0,
+            'rolling_mean_7': np.mean(history[-7:]),
+            'lag_1': history[-1],
+            'lag_7': history[-7] if len(history) >= 7 else history[-1],
+            'day_of_year': d.dayofyear,
+            'week_of_year': d.isocalendar()[1]
+        }
+        
+        # ترتيب الميزات كما يتوقع الموديل
+        input_data = [feat_dict.get(f, 0) for f in features_list]
+        pred = model.predict(input_data)
+        
+        future_preds.append(pred)
+        history.append(pred)
+        
+    return pd.DataFrame({'date': future_dates, 'forecast': future_preds})
+
+# ---------- 7️⃣ الرسوم والتحليلات ----------
+def show_metrics(f_df):
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"<div class='metric-card'><div class='metric-value'>${round(f_df['forecast'].mean(),2)}</div><div class='metric-label'>Average Forecast</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-card'><div class='metric-value'>${round(f_df['forecast'].max(),2)}</div><div class='metric-label'>Peak Sales</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='metric-card'><div class='metric-value'>${round(f_df['forecast'].min(),2)}</div><div class='metric-label'>Lowest Sales</div></div>", unsafe_allow_html=True)
+
+def plot_chart(h_df, f_df):
     fig = go.Figure()
-
-    # التاريخ الفعلي (آخر 30 يوم لزيادة الوضوح)
-    fig.add_trace(go.Scatter(
-        x=history_df['date'].tail(30),
-        y=history_df['sales'].tail(30),
-        mode='lines+markers',
-        name='Historical Sales',
-        line=dict(color="#334155", width=3)
-    ))
-
-    # التوقع المستقبلي
-    fig.add_trace(go.Scatter(
-        x=forecast_df['date'],
-        y=forecast_df['forecast'],
-        mode='lines+markers',
-        name='AI Forecast',
-        line=dict(color="#2563eb", width=4, dash='dot'),
-        marker=dict(size=8, symbol='star')
-    ))
-
-    fig.update_layout(
-        template='plotly_white',
-        height=600,
-        hovermode="x unified",
-        title_text="Sales Trend Analysis & Future Prediction",
-        xaxis_title="Date",
-        yaxis_title="Sales Value ($)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-
+    fig.add_trace(go.Scatter(x=h_df['date'].tail(20), y=h_df['sales'].tail(20), name='Recent Sales', line=dict(color="#334155", width=3)))
+    fig.add_trace(go.Scatter(x=f_df['date'], y=f_df['forecast'], name='AI Forecast', line=dict(color="#2563eb", width=4, dash='dot'), marker=dict(size=8, symbol='star')))
+    fig.update_layout(template='plotly_white', height=500, hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
-# ================== 🚀 التطبيق الرئيسي ==================
+# ================== MAIN APP ==================
 def main():
     apply_css()
     render_header()
 
-    # تحميل الموارد
-    df = load_data()
-    model = load_model()
+    st.subheader("📥 Predict Future Trends")
+    col1, col2 = st.columns(2)
+    with col1:
+        days = st.slider("Select Forecast Horizon", 7, 60, 30)
+    with col2:
+        last_val = st.number_input("Enter Current/Last Sales ($)", value=float(df['sales'].iloc[-1]))
 
-    st.markdown("### 📥 Setup Your Forecast")
-    
-    col_in1, col_in2 = st.columns(2)
-    with col_in1:
-        days = st.slider("Select Forecast Horizon (Days)", 7, 60, 30)
-    with col_in2:
-        last_val = float(df['sales'].iloc[-1])
-        last_sales = st.number_input("Last Known Sales Value ($)", value=last_val)
-
-    st.markdown("---")
-    
-    # تنفيذ التوقع عند الضغط على الزر
-    if st.button("🚀 Generate AI Prediction"):
-        with st.spinner('AI is calculating future trends...'):
-            forecast_result = recursive_forecast(
-                model, 
-                df['date'].max(), 
-                last_sales, 
-                days
-            )
-
-            st.markdown("### 📊 Performance Insights")
-            show_metrics(forecast_result)
-
-            st.markdown("### 📈 Visual Analytics")
-            plot_chart(df, forecast_result)
-            
-            # خيار تحميل البيانات
-            st.download_button(
-                label="📥 Download Forecast Data (CSV)",
-                data=forecast_result.to_csv(index=False),
-                file_name=f"forecast_goda_emad_{days}days.csv",
-                mime="text/csv"
-            )
+    if st.button("🚀 Run AI Forecasting Model"):
+        forecast_df = generate_forecast(model, df, feature_names, last_val, days)
+        show_metrics(forecast_df)
+        plot_chart(df, forecast_df)
 
 if __name__ == "__main__":
     main()
