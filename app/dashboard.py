@@ -60,6 +60,11 @@ def render_header():
 def load_data():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_PATH = os.path.join(BASE_DIR, "..", "data", "daily_sales_ready.csv")
+
+    if not os.path.exists(DATA_PATH):
+        st.error(f"❌ File not found: {DATA_PATH}")
+        st.stop()
+
     df = pd.read_csv(DATA_PATH)
     df['date'] = pd.to_datetime(df['date'])
     return df
@@ -68,7 +73,12 @@ def load_data():
 @st.cache_resource
 def load_model():
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    MODEL_PATH = os.path.join(BASE_DIR, "..", "model", "model.pkl")
+    MODEL_PATH = os.path.join(BASE_DIR, "..", "model", "catboost_sales_model.pkl")
+
+    if not os.path.exists(MODEL_PATH):
+        st.error(f"❌ File not found: {MODEL_PATH}")
+        st.stop()
+
     return joblib.load(MODEL_PATH)
 
 
@@ -122,16 +132,29 @@ def plot_chart(history_df, forecast_df):
     fig.add_trace(go.Scatter(
         x=history_df['date'],
         y=history_df['sales'],
-        mode='lines',
-        name='Historical Sales'
+        mode='lines+markers',
+        name='Historical Sales',
+        line=dict(color="#334155", width=3)
     ))
 
     fig.add_trace(go.Scatter(
         x=forecast_df['date'],
         y=forecast_df['forecast'],
         mode='lines+markers',
-        name='Forecast'
+        name='Forecast',
+        line=dict(color="#2563eb", width=4, dash='dot'),
+        marker=dict(size=8, symbol='star')
     ))
+
+    fig.update_layout(
+        template='plotly_white',
+        height=600,
+        hovermode="x unified",
+        title_text="Historical Sales & Forecast",
+        xaxis_title="Date",
+        yaxis_title="Sales ($)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
 
     st.plotly_chart(fig, use_container_width=True)
 
