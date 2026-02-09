@@ -7,6 +7,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
+import os
 from datetime import timedelta
 import plotly.graph_objects as go
 
@@ -57,14 +58,18 @@ def render_header():
 # ---------- Load Resources ----------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("data/daily_sales_ready.csv")
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DATA_PATH = os.path.join(BASE_DIR, "..", "data", "daily_sales_ready.csv")
+    df = pd.read_csv(DATA_PATH)
     df['date'] = pd.to_datetime(df['date'])
     return df
 
 
 @st.cache_resource
 def load_model():
-    return joblib.load("model/model.pkl")
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    MODEL_PATH = os.path.join(BASE_DIR, "..", "model", "model.pkl")
+    return joblib.load(MODEL_PATH)
 
 
 # ---------- Forecast Logic ----------
@@ -74,14 +79,12 @@ def recursive_forecast(model, last_date, last_sales, days):
 
     for i in range(days):
         next_date = last_date + timedelta(days=i+1)
-
         features = np.array([[
             next_date.day,
             next_date.month,
             next_date.weekday(),
             current_sales
         ]])
-
         pred = model.predict(features)[0]
         preds.append((next_date, pred))
         current_sales = pred
