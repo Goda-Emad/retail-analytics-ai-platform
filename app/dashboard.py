@@ -3,90 +3,70 @@ import pandas as pd
 import joblib
 import os
 
-# إعداد الصفحة لتعمل بأقصى سرعة
-st.set_page_config(page_title="Retail AI Forecast Dashboard", layout="wide")
+# إعداد الصفحة
+st.set_page_config(page_title="Retail AI Pro Dashboard", layout="wide")
 
-st.title("📈 Retail Sales Forecasting AI Dashboard")
+# ================== Branding & Social Links (Sidebar) ==================
+with st.sidebar:
+    st.markdown(f"## 👤 Developed by:")
+    st.markdown(f"### **Eng.Goda Emad**")
+    
+    # روابط التواصل الاجتماعي بشكل أزرار أنيقة
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/goda-emad/) ")
+    with col2:
+        st.markdown("[![GitHub](https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Goda-Emad)")
+    
+    st.divider()
 
-# تحديد المسارات بشكل ديناميكي لضمان عملها على السحابة (Streamlit Cloud)
+st.title("📈 Retail Sales AI: Features & Forecasting")
+
+# تحديد المسارات
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# نتحرك خطوة للخلف للوصول لمجلدات data و model كما في هيكل مشروعك
 DATA_PATH = os.path.join(BASE_DIR, "..", "data", "daily_sales_ready.parquet")
 MODEL_PATH = os.path.join(BASE_DIR, "..", "model", "catboost_sales_model.pkl")
 
-# ================== 1. تحميل البيانات (بصيغة Parquet البرق) ==================
 @st.cache_data
 def load_data(path):
-    df = pd.read_parquet(path)
-    df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-    return df
+    return pd.read_parquet(path)
 
-# ================== 2. تحميل الموديل (مرة واحدة في الذاكرة) ==================
 @st.cache_resource
 def load_model(path):
     return joblib.load(path)
 
+# تحميل البيانات والموديل
 try:
     df = load_data(DATA_PATH)
     model = load_model(MODEL_PATH)
 except Exception as e:
-    st.error(f"⚠️ خطأ في تحميل الملفات: {e}")
-    st.info("تأكد من وجود ملف parquet في مجلد data وملف pkl في مجلد model")
+    st.error(f"Error: {e}")
     st.stop()
 
-# ================== 3. عرض المبيعات التاريخية ==================
-st.subheader("📊 Historical Daily Sales")
+# --- عرض أهمية العوامل (Feature Importance) ---
+st.subheader("🎯 Why did the AI predict this? (Feature Importance)")
+importance = model.get_feature_importance()
+feature_names = ['day', 'month', 'year', 'dayofweek', 'lag_1', 'lag_2', 'lag_3', 'lag_7']
+fi_df = pd.DataFrame({'Feature': feature_names, 'Importance': importance}).sort_values(by='Importance', ascending=False)
+st.bar_chart(data=fi_df, x='Feature', y='Importance')
 
-# نستخدم total_amount كما ظهر في الكود الأخير الخاص بك
-daily = df[['InvoiceDate', 'total_amount']].sort_values('InvoiceDate')
-daily = daily.set_index('InvoiceDate')
+st.divider()
 
-# رسم آخر 180 يوم فقط للسرعة (يمكنك تغيير الرقم أو حذفه)
-st.line_chart(daily.tail(180))
+# --- التوقع اليدوي (Interactive Section) ---
+st.sidebar.header("🕹️ Test the AI Model")
+input_day = st.sidebar.number_input("Day", 1, 31, 10)
+input_month = st.sidebar.number_input("Month", 1, 12, 5)
+input_lag1 = st.sidebar.number_input("Yesterday's Sales ($)", value=float(df['total_amount'].iloc[-1]))
+input_lag7 = st.sidebar.number_input("Last Week Sales ($)", value=float(df['total_amount'].iloc[-7]))
 
-# ================== 4. منطق التوقع (محسن بـ Cache) ==================
-@st.cache_data
-def generate_forecast(_model, _daily_data):
-    last_date = _daily_data.index.max()
-    future_dates = pd.date_range(start=last_date, periods=31, freq='D')[1:]
+if st.sidebar.button("Run Manual Prediction"):
+    test_features = [input_day, input_month, 2026, 1, input_lag1, input_lag1, input_lag1, input_lag7]
+    prediction = model.predict(test_features)
+    st.sidebar.metric("AI Prediction", f"${prediction:,.2f}")
+    st.sidebar.balloons()
 
-    future_df = pd.DataFrame({'InvoiceDate': future_dates})
-    future_df['day'] = future_df['InvoiceDate'].dt.day
-    future_df['month'] = future_df['InvoiceDate'].dt.month
-    future_df['year'] = future_df['InvoiceDate'].dt.year
-    future_df['dayofweek'] = future_df['InvoiceDate'].dt.dayofweek
+# --- عرض البيانات التاريخية والتوقعات العامة ---
+st.subheader("📊 Historical Sales & AI Forecast")
+st.line_chart(df.set_index('InvoiceDate')['total_amount'].tail(100))
 
-    # أخذ آخر القيم الحقيقية لبدء التوقع (استخدام آخر 30 قيمة لضمان توفر كل الـ Lags)
-    last_values = list(_daily_data['total_amount'].tail(30))
-    predictions = []
-
-    for i in range(len(future_df)):
-        # بناء صف الفيتشرز بناءً على التوقعات السابقة (Auto-regressive)
-        # الترتيب: day, month, year, dayofweek, lag_1, lag_2, lag_3, lag_7
-        l1, l2, l3, l7 = last_values[-1], last_values[-2], last_values[-3], last_values[-7]
-        
-        feat_cols = future_df.iloc[i][['day','month','year','dayofweek']].values
-        features = list(feat_cols) + [l1, l2, l3, l7]
-        
-        # التوقع
-        pred = _model.predict([features])[0]
-        predictions.append(pred)
-        last_values.append(pred)
-
-    future_df['Predicted_Sales'] = predictions
-    return future_df.set_index('InvoiceDate')
-
-# تنفيذ التوقع مع رسالة انتظار احترافية
-st.subheader("🔮 Forecast Next 30 Days")
-with st.spinner('جاري حساب التوقعات باستخدام CatBoost...'):
-    future_df = generate_forecast(model, daily)
-
-# ================== 5. رسم المقارنة النهائية ==================
-combined = pd.concat([
-    daily.tail(60).rename(columns={'total_amount': 'Historical Sales'}),
-    future_df.rename(columns={'Predicted_Sales': 'Forecasted Sales'})
-], axis=1)
-
-st.line_chart(combined)
-
-st.success("✅ تم تحديث التوقعات بنجاح!")
+st.success(f"Dashboard is live! Great job, Eng. Goda.")
