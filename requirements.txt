@@ -1,1 +1,6 @@
+streamlit
+pandas
+catboost
+joblib
+matplotlib
 
