@@ -9,14 +9,42 @@ from io import BytesIO
 # ================== Page Config ==================
 st.set_page_config(page_title="Retail AI Forecasting | Eng. Goda Emad", layout="wide")
 
-# ================== Premium CSS ==================
+# ================== Premium Animated Professional Background (Lines) ==================
 st.markdown("""
 <style>
 .stApp {
-    background: linear-gradient(135deg, #e2e8f0, #f8fafc);
     font-family: 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #f0f4f8, #e0e7ff);
+    overflow: hidden;
 }
 
+/* Animated Lines Background */
+.stApp::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image:
+        linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    z-index: 0;
+    animation: moveLines 120s linear infinite;
+}
+
+/* Animation */
+@keyframes moveLines {
+    0% {background-position: 0 0, 0 0;}
+    50% {background-position: 20px 20px, 20px 20px;}
+    100% {background-position: 0 0, 0 0;}
+}
+
+/* Make content above background */
+.main .block-container {
+    position: relative;
+    z-index: 1;
+}
+
+/* Header Card */
 .header-card {
     background: white;
     padding: 35px;
@@ -26,51 +54,18 @@ st.markdown("""
     margin-bottom: 35px;
 }
 
-.name-title {
-    font-size: 42px;
-    font-weight: 900;
-    color: #0f172a;
-}
+/* Titles */
+.name-title { font-size: 42px; font-weight: 900; color: #0f172a; }
+.project-title { font-size: 26px; font-weight: 700; color: #2563eb; }
+.project-subtitle { font-size: 16px; color: #64748b; margin-top: 6px; }
 
-.project-title {
-    font-size: 26px;
-    font-weight: 700;
-    color: #2563eb;
-}
+/* Metric Cards */
+.metric-card { background:white; padding:25px; border-radius:18px; text-align:center; box-shadow:0 8px 20px rgba(0,0,0,0.08);}
+.metric-value{ font-size:36px; font-weight:700; color:#2563eb;}
+.metric-label{ color:#64748b; font-size:15px; }
 
-.project-subtitle {
-    font-size: 16px;
-    color: #64748b;
-    margin-top: 6px;
-}
-
-.metric-card {
-    background:white;
-    padding:25px;
-    border-radius:18px;
-    text-align:center;
-    box-shadow:0 8px 20px rgba(0,0,0,0.08);
-}
-
-.metric-value{
-    font-size:36px;
-    font-weight:700;
-    color:#2563eb;
-}
-
-.metric-label{
-    color:#64748b;
-    font-size:15px;
-}
-
-.stButton>button{
-    background:#2563eb;
-    color:white;
-    border-radius:10px;
-    height:55px;
-    font-size:18px;
-    font-weight:bold;
-}
+/* Button */
+.stButton>button{ background:#2563eb; color:white; border-radius:10px; height:55px; font-size:18px; font-weight:bold;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -132,7 +127,7 @@ def forecast(model, df_hist, feature_names, lag1, lag7, days):
             'day': d.day,
             'month': d.month,
             'dayofweek': d.dayofweek,
-            'is_weekend': 1 if d.dayofweek in [4,5] else 0,
+            'is_weekend': 1 if d.dayofweek in [5,6] else 0,
             'rolling_mean_7': pd.Series(history[-7:]).mean(),
             'lag_1': history[-1],
             'lag_7': history[-7]
