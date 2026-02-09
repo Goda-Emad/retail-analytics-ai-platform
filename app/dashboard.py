@@ -1,188 +1,173 @@
+# ==============================
+# Retail Sales Forecasting AI
+# Developed by Eng. Goda Emad
+# ==============================
+
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
-import os
+from datetime import timedelta
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-from io import BytesIO
 
-# ================== Page Config ==================
-st.set_page_config(page_title="Retail AI Forecasting", layout="wide")
 
-# ================== Premium CSS ==================
-st.markdown("""
-<style>
-body {background-color: #f5f7fa;}
-.main-title {
-    font-size:48px;
-    font-weight:800;
-    color:#0f172a;
-    text-align:center;
-    margin-bottom:5px;
-}
-.sub-title {
-    text-align:center;
-    font-size:18px;
-    color:#475569;
-    margin-bottom:35px;
-}
-.card {
-    background:white;
-    padding:25px;
-    border-radius:18px;
-    box-shadow:0 10px 25px rgba(0,0,0,0.08);
-}
-.metric-card {
-    background:white;
-    padding:25px;
-    border-radius:18px;
-    text-align:center;
-    box-shadow:0 8px 20px rgba(0,0,0,0.08);
-}
-.metric-value{
-    font-size:36px;
-    font-weight:700;
-    color:#2563eb;
-}
-.metric-label{
-    color:#64748b;
-    font-size:15px;
-}
-.stButton>button{
-    background:#2563eb;
-    color:white;
-    border-radius:10px;
-    height:55px;
-    font-size:18px;
-    font-weight:bold;
-}
-</style>
-""", unsafe_allow_html=True)
+# ---------- Page Config ----------
+st.set_page_config(page_title="Retail AI Forecast", layout="wide")
 
-# ================== Load Files ==================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "..", "data", "daily_sales_ready.parquet")
-MODEL_PATH = os.path.join(BASE_DIR, "..", "model", "catboost_sales_model_v2.pkl")
-FEAT_PATH = os.path.join(BASE_DIR, "..", "model", "feature_names.pkl")
 
+# ---------- Styling ----------
+def apply_css():
+    st.markdown("""
+    <style>
+    .stApp {background: linear-gradient(135deg,#eef2f7,#ffffff);}
+    .header-card {
+        background:white;padding:35px;border-radius:20px;
+        box-shadow:0 10px 30px rgba(0,0,0,0.08);
+        text-align:center;margin-bottom:30px;
+    }
+    .name-title{font-size:44px;font-weight:900;color:#0f172a;}
+    .project-title{font-size:26px;font-weight:700;color:#2563eb;}
+    .metric-card{
+        background:white;padding:25px;border-radius:18px;
+        text-align:center;box-shadow:0 8px 20px rgba(0,0,0,0.08);
+    }
+    .metric-value{font-size:34px;font-weight:700;color:#2563eb;}
+    .metric-label{color:#64748b;}
+    .stButton>button{
+        background:#2563eb;color:white;
+        border-radius:10px;height:55px;font-size:18px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+# ---------- Header ----------
+def render_header():
+    st.markdown("""
+    <div class='header-card'>
+        <div class='name-title'>Eng. Goda Emad</div>
+        <div class='project-title'>Smart Retail Sales Forecasting AI</div>
+        <p>Interactive ML Dashboard for Predicting Future Retail Sales</p>
+        <a href='https://www.linkedin.com/in/goda-emad/' target='_blank'>LinkedIn</a> |
+        <a href='https://github.com/Goda-Emad' target='_blank'>GitHub</a>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ---------- Load Resources ----------
 @st.cache_data
-def load_essentials():
-    df = pd.read_parquet(DATA_PATH)
-    df['InvoiceDate'] = pd.to_datetime(df['InvoiceDate'])
-    model = joblib.load(MODEL_PATH)
-    feature_names = joblib.load(FEAT_PATH)
-    return df, model, feature_names
+def load_data():
+    df = pd.read_csv("data/daily_sales_ready.csv")
+    df['date'] = pd.to_datetime(df['date'])
+    return df
 
-df, model, feature_names = load_essentials()
 
-# ================== Header ==================
-st.markdown("<div class='main-title'>Smart Retail Sales Forecasting AI</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Interactive AI Dashboard for Predicting Future Retail Sales</div>", unsafe_allow_html=True)
+@st.cache_resource
+def load_model():
+    return joblib.load("model/model.pkl")
 
-# ================== Inputs Row ==================
-c1, c2, c3, c4 = st.columns([2,2,2,1])
 
-default_lag1 = float(df['total_amount'].iloc[-1])
-default_lag7 = float(df['total_amount'].iloc[-7])
+# ---------- Forecast Logic ----------
+def recursive_forecast(model, last_date, last_sales, days):
+    preds = []
+    current_sales = last_sales
 
-with c1:
-    lag1 = st.number_input("Yesterday's Sales ($)", value=default_lag1)
+    for i in range(days):
+        next_date = last_date + timedelta(days=i+1)
 
-with c2:
-    lag7 = st.number_input("Last Week's Sales ($)", value=default_lag7)
+        features = np.array([[
+            next_date.day,
+            next_date.month,
+            next_date.weekday(),
+            current_sales
+        ]])
 
-with c3:
-    days = st.slider("Forecast Days", 7, 60, 30)
+        pred = model.predict(features)[0]
+        preds.append((next_date, pred))
+        current_sales = pred
 
-with c4:
-    predict_btn = st.button("🔮 Predict")
+    return pd.DataFrame(preds, columns=["date", "forecast"])
 
-# ================== Forecast Function ==================
-def forecast(model, df_hist, feature_names, lag1, lag7, days):
-    future_preds = []
-    last_date = df_hist['InvoiceDate'].max()
-    future_dates = pd.date_range(last_date + timedelta(days=1), periods=days)
-    history = list(df_hist['total_amount'].tail(30))
-    history[-1] = lag1
 
-    for d in future_dates:
-        feats = {
-            'day': d.day,
-            'month': d.month,
-            'dayofweek': d.dayofweek,
-            'is_weekend': 1 if d.dayofweek in [4,5] else 0,
-            'rolling_mean_7': pd.Series(history[-7:]).mean(),
-            'lag_1': history[-1],
-            'lag_7': history[-7]
-        }
-        X = [feats[f] for f in feature_names]
-        pred = model.predict([X])[0]
-        future_preds.append(pred)
-        history.append(pred)
+# ---------- Metrics ----------
+def show_metrics(forecast_df):
+    c1, c2, c3 = st.columns(3)
 
-    return future_dates, future_preds
+    c1.markdown(f"""
+    <div class='metric-card'>
+        <div class='metric-value'>{round(forecast_df['forecast'].mean(),2)}</div>
+        <div class='metric-label'>Average Forecast</div>
+    </div>""", unsafe_allow_html=True)
 
-# ================== Run After Predict ==================
-if predict_btn:
+    c2.markdown(f"""
+    <div class='metric-card'>
+        <div class='metric-value'>{round(forecast_df['forecast'].max(),2)}</div>
+        <div class='metric-label'>Peak Sales</div>
+    </div>""", unsafe_allow_html=True)
 
-    dates, preds = forecast(model, df, feature_names, lag1, lag7, days)
-    fdf = pd.DataFrame({'Date': dates, 'Sales': preds})
+    c3.markdown(f"""
+    <div class='metric-card'>
+        <div class='metric-value'>{round(forecast_df['forecast'].min(),2)}</div>
+        <div class='metric-label'>Lowest Sales</div>
+    </div>""", unsafe_allow_html=True)
 
-    peak = fdf['Sales'].idxmax()
-    low = fdf['Sales'].idxmin()
 
-    # ================== Chart ==================
+# ---------- Chart ----------
+def plot_chart(history_df, forecast_df):
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(
-        x=df['InvoiceDate'].tail(15),
-        y=df['total_amount'].tail(15),
+        x=history_df['date'],
+        y=history_df['sales'],
+        mode='lines',
+        name='Historical Sales'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=forecast_df['date'],
+        y=forecast_df['forecast'],
         mode='lines+markers',
-        name='Actual Sales',
-        line=dict(color='#0f172a', width=3)
+        name='Forecast'
     ))
 
-    fig.add_trace(go.Scatter(
-        x=fdf['Date'],
-        y=fdf['Sales'],
-        mode='lines+markers',
-        name='Forecast',
-        line=dict(color='#2563eb', width=4),
-        marker=dict(size=9)
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=[fdf.loc[peak,'Date']],
-        y=[fdf.loc[peak,'Sales']],
-        mode='markers',
-        marker=dict(size=14, color='red'),
-        name='Peak'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=[fdf.loc[low,'Date']],
-        y=[fdf.loc[low,'Sales']],
-        mode='markers',
-        marker=dict(size=14, color='green'),
-        name='Lowest'
-    ))
-
-    fig.update_layout(height=600, template='plotly_white', hovermode='x unified')
     st.plotly_chart(fig, use_container_width=True)
 
-    # ================== Metrics ==================
-    st.markdown("### Key Insights")
-    m1, m2, m3, m4 = st.columns(4)
 
-    m1.markdown(f"<div class='metric-card'><div class='metric-value'>${preds[0]:,.0f}</div><div class='metric-label'>Tomorrow</div></div>", unsafe_allow_html=True)
-    m2.markdown(f"<div class='metric-card'><div class='metric-value'>${sum(preds[:7]):,.0f}</div><div class='metric-label'>Next 7 Days</div></div>", unsafe_allow_html=True)
-    m3.markdown(f"<div class='metric-card'><div class='metric-value'>${max(preds):,.0f}</div><div class='metric-label'>Peak Day</div></div>", unsafe_allow_html=True)
-    m4.markdown(f"<div class='metric-card'><div class='metric-value'>${min(preds):,.0f}</div><div class='metric-label'>Lowest Day</div></div>", unsafe_allow_html=True)
+# ================== MAIN APP ==================
+def main():
+    apply_css()
+    render_header()
 
-    # ================== Download ==================
-    buffer = BytesIO()
-    fdf.to_csv(buffer, index=False)
-    st.download_button("📥 Download Forecast CSV", buffer.getvalue(), "forecast.csv")
+    df = load_data()
+    model = load_model()
 
-# ================== Footer ==================
-st.markdown("<br><center style='color:#64748b'>Developed by Eng. Goda Emad | CatBoost AI</center>", unsafe_allow_html=True)
+    st.subheader("📥 Enter Forecast Inputs")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        days = st.slider("Forecast Days", 7, 60, 30)
+
+    with col2:
+        last_sales = st.number_input(
+            "Last Known Sales",
+            value=float(df['sales'].iloc[-1])
+        )
+
+    if st.button("🚀 Predict Future Sales"):
+        forecast_df = recursive_forecast(
+            model,
+            df['date'].max(),
+            last_sales,
+            days
+        )
+
+        st.subheader("📊 Forecast Insights")
+        show_metrics(forecast_df)
+
+        st.subheader("📈 Forecast Chart")
+        plot_chart(df, forecast_df)
+
+
+if __name__ == "__main__":
+    main()
