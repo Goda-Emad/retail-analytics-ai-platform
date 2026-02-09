@@ -1,5 +1,6 @@
-streamlit==1.32.2
-pandas==2.2.2
-catboost==1.2.5
-joblib==1.4.2
-pyarrow  # ضروري عشان صيغة Parquet السريعة
+streamlit
+pandas
+catboost
+joblib
+pyarrow
+plotly
