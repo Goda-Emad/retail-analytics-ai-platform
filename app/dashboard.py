@@ -7,7 +7,7 @@ from catboost import CatBoostRegressor
 import joblib
 
 # ================== Page Setup ==================
-st.set_page_config(page_title="Retail AI Pro | Real Forecast", layout="wide")
+st.set_page_config(page_title="Retail AI Pro v9 | Real Forecast", layout="wide")
 
 # ================== Theme ==================
 if "theme_mode" not in st.session_state:
@@ -54,23 +54,27 @@ st.markdown(f"""
 model: CatBoostRegressor = joblib.load("models/catboost_sales_model.pkl")
 feature_names = joblib.load("models/feature_names.pkl")  # ترتيب الـ features
 
-# ================== Historical Data ==================
-dates_hist = pd.date_range(end=pd.Timestamp.today(), periods=60)
-sales_hist = pd.Series(np.random.randint(8000, 12000, size=len(dates_hist)), index=dates_hist)
+# ================== Load Real Data ==================
+# استبدل path ده بمصدر بياناتك الفعلي
+df = pd.read_csv("data/sales_data.csv", parse_dates=["InvoiceDate"])
+df = df.sort_values("InvoiceDate")
+sales_hist = df.set_index("InvoiceDate")["TotalAmount"]
 
 # ================== Feature Engineering ==================
 def get_cyclical_features(date):
-    """Features موسمية: يوم من الأسبوع + شهر"""
     day_sin = np.sin(2*np.pi*date.dayofweek/7)
     week_sin = np.sin(2*np.pi*(date.dayofyear%7)/7)
     month_sin = np.sin(2*np.pi*date.month/12)
     return day_sin, week_sin, month_sin
 
 def get_lagged_features(series, lags=[1,7]):
-    df = pd.DataFrame()
+    df_lag = pd.DataFrame()
     for lag in lags:
-        df[f"lag_{lag}"] = series.shift(lag)
-    return df
+        if len(series) >= lag:
+            df_lag[f"lag_{lag}"] = series.shift(lag)
+        else:
+            df_lag[f"lag_{lag}"] = 0
+    return df_lag
 
 # ================== Generate Forecast ==================
 def generate_forecast(hist_series, horizon, scenario="Realistic", noise_level=0.03):
@@ -84,17 +88,13 @@ def generate_forecast(hist_series, horizon, scenario="Realistic", noise_level=0.
         latest_lags = lag_features.iloc[-1].values
         X = np.array([day_sin, week_sin, month_sin] + list(latest_lags)).reshape(1,-1)
 
-        # ترتيب الـ features حسب feature_names
         X_df = pd.DataFrame(X, columns=feature_names)
         pred = model.predict(X_df)[0]
 
-        # Apply scenario
         if scenario=="Optimistic (+15%)": pred *= 1.15
         elif scenario=="Pessimistic (-15%)": pred *= 0.85
 
-        # Noise لجعل forecast أكثر واقعية
         pred = pred * (1 + np.random.normal(0, noise_level))
-
         forecast_values.append(pred)
         hist.loc[date] = pred
 
@@ -134,3 +134,25 @@ if run_btn:
     st.subheader("📊 Forecast Table")
     st.dataframe(df_forecast.style.format({"Forecast":"${:,.0f}","Lower":"${:,.0f}","Upper":"${:,.0f}"}))
     st.download_button("📥 Download Forecast CSV", df_forecast.to_csv(index=False), "forecast.csv", "text/csv")
+
+    # ===== Backtest (حقيقي) =====
+    backtest_days = min(30, len(sales_hist)-7)
+    actual_back = sales_hist[-backtest_days:]
+    preds_back = []
+
+    hist_temp = sales_hist[:-backtest_days].copy()
+    for date in actual_back.index:
+        day_sin, week_sin, month_sin = get_cyclical_features(date)
+        lag_features = get_lagged_features(hist_temp, lags=[1,7])
+        latest_lags = lag_features.iloc[-1].values
+        X = np.array([day_sin, week_sin, month_sin] + list(latest_lags)).reshape(1,-1)
+        X_df = pd.DataFrame(X, columns=feature_names)
+        pred = model.predict(X_df)[0]
+        preds_back.append(pred)
+        hist_temp.loc[date] = actual_back.loc[date]
+
+    preds_back = np.array(preds_back)
+    mape = np.mean(np.abs((actual_back - preds_back)/actual_back))*100
+    confidence = max(0, 100 - mape)
+
+    st.markdown(f"**Backtest MAPE:** {mape:.2f}% | **Confidence:** {confidence:.2f}%")
