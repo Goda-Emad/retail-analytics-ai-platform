@@ -7,6 +7,8 @@ from datetime import timedelta
 from catboost import CatBoostRegressor
 import joblib
 import os
+import base64
+import requests
 
 # ================== Paths ==================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,9 +67,19 @@ else:
     accent_color = "#2563eb"
     card_bg = "rgba(255,255,255,0.6)"
 
-# ================== CSS Glassmorphic ==================
+# ================== Glassmorphic Background ==================
+# صورة سوبرماركت من الإنترنت
+BG_URL = "https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=1950&q=80"
+bg_base64 = base64.b64encode(requests.get(BG_URL).content).decode()
+
 st.markdown(f"""
 <style>
+.stApp {{
+    background-image: url("data:image/jpg;base64,{bg_base64}");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}}
 .stApp::before {{
     content: "";
     position: fixed; top:0; left:0; width:100%; height:100%;
