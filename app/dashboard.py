@@ -9,7 +9,7 @@ from io import BytesIO
 # ================== Page Config ==================
 st.set_page_config(page_title="Retail AI Forecasting | Eng. Goda Emad", layout="wide")
 
-# ================== Premium CSS (Keeping your Original Design) ==================
+# ================== Premium CSS (Your Original Design) ==================
 st.markdown("""
 <style>
 .stApp { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #f0f4f8, #e0e7ff); overflow-x: hidden; }
@@ -30,23 +30,25 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ================== Load Files (Matching GitHub Structure) ==================
-# بيتم تحديد المسار النسبي بناءً على مكان ملف الـ app
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
+# ================== Safe Path Loading (Fixing the Error) ==================
+# هذا الجزء يضمن الوصول للملفات سواء على السيرفر أو محلياً
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-DATA_PATH = os.path.join(BASE_DIR, "data", "daily_sales_ready.parquet")
-MODEL_PATH = os.path.join(BASE_DIR, "model", "catboost_sales_model_v2.pkl")
-FEAT_PATH = os.path.join(BASE_DIR, "model", "feature_names.pkl")
+DATA_PATH = os.path.join(ROOT_DIR, "data", "daily_sales_ready.parquet")
+MODEL_PATH = os.path.join(ROOT_DIR, "model", "catboost_sales_model_v2.pkl")
+FEAT_PATH = os.path.join(ROOT_DIR, "model", "feature_names.pkl")
 
 @st.cache_resource
 def load_essentials():
-    # تحميل الداتا
+    # التحقق من وجود الملفات أولاً
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Missing: {DATA_PATH}")
+    
     df_raw = pd.read_parquet(DATA_PATH)
     if 'InvoiceDate' in df_raw.columns:
         df_raw['InvoiceDate'] = pd.to_datetime(df_raw['InvoiceDate'])
         df_raw.set_index('InvoiceDate', inplace=True)
     
-    # تحميل الموديل والميزات
     model_loaded = joblib.load(MODEL_PATH)
     features_loaded = joblib.load(FEAT_PATH)
     return df_raw, model_loaded, features_loaded
@@ -54,7 +56,8 @@ def load_essentials():
 try:
     df, model, feature_names = load_essentials()
 except Exception as e:
-    st.error(f"⚠️ Error loading project files. Please ensure the 'data' and 'model' folders are present. Details: {e}")
+    st.error(f"⚠️ Critical Error: {e}")
+    st.info("Check: Are folders 'data' and 'model' in the same directory as this script?")
     st.stop()
 
 # ================== Header ==================
@@ -63,42 +66,38 @@ st.markdown(f"""
     <div class='name-title'>Eng. Goda Emad</div>
     <div class='project-title'>Smart Retail AI Platform</div>
     <div class='project-subtitle'>
-        High-Precision Sales Forecasting using CatBoost | Model Accuracy (R2): 0.82
+        CatBoost Forecasting Engine | R2 Accuracy: 82.09% | 21 Strategic Features
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ================== Dashboard Controls ==================
+# ================== Controls ==================
 c1, c2, c3, c4 = st.columns([2,2,2,1.5])
 
 last_sales = float(df['Daily_Sales'].iloc[-1])
 last_cust = int(df['Unique_Customers'].iloc[-1])
 
 with c1:
-    in_sales = st.number_input("Yesterday's Total Sales ($)", value=last_sales)
+    in_sales = st.number_input("Last Actual Sales ($)", value=last_sales)
 with c2:
-    in_cust = st.number_input("Total Customers Yesterday", value=last_cust)
+    in_cust = st.number_input("Last Total Customers", value=last_cust)
 with c3:
-    forecast_horizon = st.slider("Prediction Days", 7, 30, 14)
+    forecast_horizon = st.slider("Forecast Days", 7, 30, 14)
 with c4:
-    st.write("") # Spacer
-    predict_btn = st.button("🔮 Run AI Model")
+    st.write("") # Padding
+    predict_btn = st.button("🔮 Run Prediction")
 
-# ================== Forecast Engine ==================
+# ================== Forecast Logic ==================
 def run_forecast(model_obj, df_history, feature_list, sales_input, cust_input, days_count):
     temp_df = df_history.copy()
-    
-    # تحديث آخر يوم بالمدخلات اليدوية
     temp_df.iloc[-1, temp_df.columns.get_loc('Daily_Sales')] = sales_input
     temp_df.iloc[-1, temp_df.columns.get_loc('Unique_Customers')] = cust_input
     
-    forecast_results = []
     current_dt = temp_df.index.max()
     
-    for i in range(days_count):
+    for _ in range(days_count):
         next_dt = current_dt + timedelta(days=1)
         
-        # تحضير الـ 21 ميزة المطلوبة للموديل
         row_data = {
             'Order_Count': temp_df['Order_Count'].mean(),
             'Unique_Customers': temp_df['Unique_Customers'].iloc[-1],
@@ -122,44 +121,34 @@ def run_forecast(model_obj, df_history, feature_list, sales_input, cust_input, d
             'rolling_std_7': temp_df['Daily_Sales'].tail(7).std()
         }
         
-        # ترتيب المدخلات حسب الموديل
         X_vec = [row_data.get(f, 0) for f in feature_list]
-        
-        # التوقع
         prediction = model_obj.predict(X_vec)
-        forecast_results.append(prediction)
         
-        # تحديث التاريخ المرجعي للتوقع القادم
-        new_entry = pd.DataFrame([row_data], index=[next_dt])
-        new_entry['Daily_Sales'] = prediction
-        temp_df = pd.concat([temp_df, new_entry])
+        # إضافة السطر الجديد للداتا لاستخدامه في اليوم التالي
+        new_row = pd.DataFrame([row_data], index=[next_dt])
+        new_row['Daily_Sales'] = prediction
+        temp_df = pd.concat([temp_df, new_row])
         current_dt = next_dt
         
     return temp_df.tail(days_count)
 
-# ================== Display Logic ==================
+# ================== Results ==================
 if predict_btn:
-    with st.spinner('AI Engine is processing historical patterns...'):
-        final_preds = run_forecast(model, df, feature_names, in_sales, in_cust, forecast_horizon)
+    with st.spinner('AI analyzing retail patterns...'):
+        results = run_forecast(model, df, feature_names, in_sales, in_cust, forecast_horizon)
         
-        # Visualization
+        # Plotly Graph
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df.index[-20:], y=df['Daily_Sales'].tail(20), name="Actual History", line=dict(color="#0f172a", width=2)))
-        fig.add_trace(go.Scatter(x=final_preds.index, y=final_preds['Daily_Sales'], name="AI Forecast", line=dict(color="#2563eb", width=4, dash='dot')))
-        
-        fig.update_layout(template="plotly_white", height=500, margin=dict(l=10, r=10, t=40, b=10))
+        fig.add_trace(go.Scatter(x=df.index[-15:], y=df['Daily_Sales'].tail(15), name="History", line=dict(color="#0f172a", width=2)))
+        fig.add_trace(go.Scatter(x=results.index, y=results['Daily_Sales'], name="AI Forecast", line=dict(color="#2563eb", width=4, dash='dot')))
+        fig.update_layout(template="plotly_white", height=500, hovermode="x unified")
         st.plotly_chart(fig, use_container_width=True)
         
-        # Performance Summary
-        st.markdown("### 📊 Performance Metrics")
+        # Metrics
         m1, m2, m3, m4 = st.columns(4)
-        m1.markdown(f"<div class='metric-card'><div class='metric-label'>Tomorrow's Target</div><div class='metric-value'>${final_preds['Daily_Sales'].iloc[0]:,.0f}</div></div>", unsafe_allow_html=True)
-        m2.markdown(f"<div class='metric-card'><div class='metric-label'>Cumulative Forecast</div><div class='metric-value'>${final_preds['Daily_Sales'].sum():,.0f}</div></div>", unsafe_allow_html=True)
-        m3.markdown(f"<div class='metric-card'><div class='metric-label'>Peak Expected</div><div class='metric-value'>${final_preds['Daily_Sales'].max():,.0f}</div></div>", unsafe_allow_html=True)
-        m4.markdown(f"<div class='metric-card'><div class='metric-label'>Model Confidence</div><div class='metric-value'>82.09%</div></div>", unsafe_allow_html=True)
+        m1.markdown(f"<div class='metric-card'><div class='metric-label'>Next Day</div><div class='metric-value'>${results['Daily_Sales'].iloc[0]:,.0f}</div></div>", unsafe_allow_html=True)
+        m2.markdown(f"<div class='metric-card'><div class='metric-label'>Period Total</div><div class='metric-value'>${results['Daily_Sales'].sum():,.0f}</div></div>", unsafe_allow_html=True)
+        m3.markdown(f"<div class='metric-card'><div class='metric-label'>Highest Day</div><div class='metric-value'>${results['Daily_Sales'].max():,.0f}</div></div>", unsafe_allow_html=True)
+        m4.markdown(f"<div class='metric-card'><div class='metric-label'>Model R2</div><div class='metric-value'>82%</div></div>", unsafe_allow_html=True)
 
-        # Download Report
-        report_csv = final_preds[['Daily_Sales']].to_csv().encode('utf-8')
-        st.download_button("📥 Download Forecast Report", report_csv, "retail_forecast_goda.csv", "text/csv")
-
-st.markdown("<br><hr><center style='color:#64748b'>Retail Analytics AI Platform | Designed by Eng. Goda Emad © 2026</center>", unsafe_allow_html=True)
+st.markdown("<br><hr><center style='color:#64748b'>© 2026 Eng. Goda Emad | AI & Data Engineering</center>", unsafe_allow_html=True)
