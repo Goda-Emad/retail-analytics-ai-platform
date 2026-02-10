@@ -3,196 +3,134 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import timedelta
-from PIL import Image
+from catboost import CatBoostRegressor
+import joblib
 
 # ================== Page Setup ==================
-st.set_page_config(page_title="Retail AI Pro v4 | Eng. Goda Emad", layout="wide")
+st.set_page_config(page_title="Retail AI Pro | Real Forecast", layout="wide")
 
-# ================== Background Image + Gradient ==================
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-image: linear-gradient(rgba(0,0,0,0.15), rgba(0,0,0,0.15)), url("images/bg_retail_1.png");
-        background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+# ================== Theme ==================
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "Light 🌞"
 
-# ================== Header with Logo ==================
-st.markdown(
-    """
-    <div style='display:flex; align-items:center; padding-bottom:20px;'>
-        <img src='images/retail_ai_pro_logo.webp' width='100'>
-        <h2 style='margin-left:15px; color:#1e293b;'>Retail AI Pro v4 | Eng. Goda Emad</h2>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+def toggle_theme():
+    st.session_state.theme_mode = "Dark 🌙" if st.session_state.theme_mode=="Light 🌞" else "Light 🌞"
 
-# ================== Sidebar ==================
-st.sidebar.image("images/retail_ai_pro_logo.webp", width=150)
-st.sidebar.header("🎮 Control Center")
-scenario = st.sidebar.selectbox("Market Scenario", ["Realistic", "Optimistic (+15%)", "Pessimistic (-15%)"])
-horizon = st.sidebar.slider("Forecast Horizon (Days)", 7, 30, 21)
-last_sales = st.sidebar.number_input("Last Day Sales ($)", value=32950.0)
-last_customers = st.sidebar.number_input("Last Day Customers", value=485)
-run_btn = st.sidebar.button("🚀 Run AI Forecast")
+st.button("🌗 Toggle Theme", on_click=toggle_theme)
+theme_mode = st.session_state.theme_mode
 
-theme_mode = st.sidebar.selectbox("Theme Mode", ["Light 🌞", "Dark 🌙"])
 if theme_mode == "Dark 🌙":
     bg_color = "#0f172a"
     text_color = "#f1f5f9"
-    card_color = "rgba(30,41,59,0.85)"
     accent_color = "#3b82f6"
 else:
     bg_color = "#f8fafc"
     text_color = "#1e293b"
-    card_color = "rgba(255,255,255,0.75)"
     accent_color = "#2563eb"
 
-# ================== Dummy Historical Data ==================
-dates_hist = pd.date_range(end=pd.Timestamp.today(), periods=60)
-sales_hist = np.random.randint(8000, 12000, size=len(dates_hist))
-df_hist = pd.DataFrame({"Date": dates_hist, "Sales": sales_hist})
-
-# ================== Forecast Engine ==================
-if run_btn:
-    st.subheader(f"📈 Forecast: {scenario} Scenario")
-    
-    future_dates = [dates_hist[-1] + timedelta(days=i+1) for i in range(horizon)]
-    forecast = np.random.randint(9000, 12000, size=horizon)
-    
-    if scenario == "Optimistic (+15%)": forecast = forecast * 1.15
-    elif scenario == "Pessimistic (-15%)": forecast = forecast * 0.85
-    
-    error_margin = forecast * 0.05
-    upper = forecast + error_margin
-    lower = forecast - error_margin
-    
-    # ===== Plotly Chart with Hover Effects =====
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=dates_hist, y=sales_hist,
-        mode='lines+markers',
-        name="History",
-        line=dict(color='gray', width=2, shape='spline'),
-        marker=dict(size=6, color='gray'),
-        hovertemplate='Date: %{x}<br>Sales: $%{y}<extra></extra>'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=future_dates, y=forecast,
-        mode='lines+markers',
-        name="AI Forecast",
-        line=dict(color=accent_color, width=3, shape='spline'),
-        marker=dict(size=8, color=accent_color),
-        hovertemplate='Date: %{x}<br>Forecast: $%{y:.0f}<extra></extra>'
-    ))
-    
-    fig.add_trace(go.Scatter(
-        x=future_dates + future_dates[::-1],
-        y=list(upper) + list(lower[::-1]),
-        fill='toself',
-        fillcolor='rgba(59,130,246,0.15)',
-        line=dict(color='rgba(255,255,255,0)'),
-        hoverinfo="skip",
-        showlegend=True,
-        name="Error Margin"
-    ))
-    
-    fig.update_layout(
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font_color=text_color,
-        xaxis_title="Date",
-        yaxis_title="Sales ($)",
-        hovermode="x unified"
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # ===== Backtest Chart =====
-    st.subheader("🔁 Backtest Accuracy")
-    backtest_dates = pd.date_range(end=pd.Timestamp.today(), periods=30)
-    actual_back = np.random.randint(9000, 12000, size=len(backtest_dates))
-    pred_back = actual_back * np.random.uniform(0.95, 1.05, size=len(backtest_dates))
-    mape = np.mean(np.abs((actual_back - pred_back)/actual_back))*100
-    
-    fig_bt = go.Figure()
-    fig_bt.add_trace(go.Scatter(
-        x=backtest_dates, y=actual_back,
-        mode='lines+markers',
-        name="Actual",
-        line=dict(color='gray', width=2, shape='spline'),
-        marker=dict(size=6, color='gray'),
-        hovertemplate='Date: %{x}<br>Actual: $%{y}<extra></extra>'
-    ))
-    fig_bt.add_trace(go.Scatter(
-        x=backtest_dates, y=pred_back,
-        mode='lines+markers',
-        name="Predicted",
-        line=dict(color=accent_color, width=3, shape='spline'),
-        marker=dict(size=8, color=accent_color),
-        hovertemplate='Date: %{x}<br>Predicted: $%{y:.0f}<extra></extra>'
-    ))
-    
-    fig_bt.update_layout(
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        font_color=text_color,
-        xaxis_title="Date",
-        yaxis_title="Sales ($)",
-        hovermode="x unified"
-    )
-    
-    st.plotly_chart(fig_bt, use_container_width=True)
-    st.markdown(f"**Backtest MAPE:** {mape:.2f}%")
-    
-    # ===== Metric Cards with Hover =====
-    total_forecast = forecast.sum()
-    avg_daily = forecast.mean()
-    confidence = 82  # dummy
-    
-    def display_card(title, value):
-        card_html = f"""
-        <div style='
-            background: rgba(255, 255, 255, 0.75);
-            backdrop-filter: blur(8px);
-            padding: 20px;
-            border-radius: 15px;
-            text-align:center;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-            transition: transform 0.2s;
-        ' onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-            <b>{title}</b><br>
-            <span style='font-size:28px; color:{accent_color}'>{value}</span>
-        </div>
-        """
-        st.markdown(card_html, unsafe_allow_html=True)
-    
-    col1, col2, col3, col4 = st.columns([1,1,1,1])
-    display_card("Forecast Total", f"${total_forecast:,.0f}")
-    display_card("Avg Daily", f"${avg_daily:,.0f}")
-    display_card("Confidence", f"{confidence}%")
-    col4.download_button("📥 Download Data", pd.DataFrame({
-        'Date': future_dates,
-        'Forecast': forecast,
-        'Lower': lower,
-        'Upper': upper
-    }).to_csv(index=False), "forecast.csv", "text/csv", use_container_width=True)
-
-# ================== Footer ==================
+# ================== Background & Header ==================
 st.markdown(f"""
-<div style='font-size:12px; color:#64748b; text-align:center; margin-top:20px;'>
-    Retail AI Engine v4.0 | Built by <strong>Eng. Goda Emad</strong> | 
-    <a href='https://www.linkedin.com/in/goda-emad/' target='_blank'>LinkedIn</a> | 
-    <a href='https://github.com/Goda-Emad' target='_blank'>GitHub</a><br>
-    Features: Cyclical Features, Lagged Features, Rolling Means, Backtesting, Scenario Forecasting
+<style>
+.stApp {{
+    background-image: url("images/bg_retail_1.png");
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+}}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown(f"""
+<div style='display:flex; align-items:center; padding:20px; position:fixed; width:100%; z-index:200;'>
+    <img src='images/retail_ai_pro_logo.webp' width='100'>
+    <div style='margin-left:15px;'>
+        <h1 style='margin:0; color:{accent_color};'>Retail AI Pro</h1>
+        <h3 style='margin:0; color:{text_color};'>Built by Eng. Goda Emad</h3>
+    </div>
 </div>
 """, unsafe_allow_html=True)
+
+# ================== Load Model ==================
+model: CatBoostRegressor = joblib.load("models/catboost_sales_model.pkl")
+feature_names = joblib.load("models/feature_names.pkl")  # ترتيب الـ features
+
+# ================== Historical Data ==================
+dates_hist = pd.date_range(end=pd.Timestamp.today(), periods=60)
+sales_hist = pd.Series(np.random.randint(8000, 12000, size=len(dates_hist)), index=dates_hist)
+
+# ================== Feature Engineering ==================
+def get_cyclical_features(date):
+    """Features موسمية: يوم من الأسبوع + شهر"""
+    day_sin = np.sin(2*np.pi*date.dayofweek/7)
+    week_sin = np.sin(2*np.pi*(date.dayofyear%7)/7)
+    month_sin = np.sin(2*np.pi*date.month/12)
+    return day_sin, week_sin, month_sin
+
+def get_lagged_features(series, lags=[1,7]):
+    df = pd.DataFrame()
+    for lag in lags:
+        df[f"lag_{lag}"] = series.shift(lag)
+    return df
+
+# ================== Generate Forecast ==================
+def generate_forecast(hist_series, horizon, scenario="Realistic", noise_level=0.03):
+    forecast_values = []
+    hist = hist_series.copy()
+
+    for i in range(horizon):
+        date = hist.index[-1] + pd.Timedelta(days=1)
+        day_sin, week_sin, month_sin = get_cyclical_features(date)
+        lag_features = get_lagged_features(hist, lags=[1,7])
+        latest_lags = lag_features.iloc[-1].values
+        X = np.array([day_sin, week_sin, month_sin] + list(latest_lags)).reshape(1,-1)
+
+        # ترتيب الـ features حسب feature_names
+        X_df = pd.DataFrame(X, columns=feature_names)
+        pred = model.predict(X_df)[0]
+
+        # Apply scenario
+        if scenario=="Optimistic (+15%)": pred *= 1.15
+        elif scenario=="Pessimistic (-15%)": pred *= 0.85
+
+        # Noise لجعل forecast أكثر واقعية
+        pred = pred * (1 + np.random.normal(0, noise_level))
+
+        forecast_values.append(pred)
+        hist.loc[date] = pred
+
+    return np.array(forecast_values)
+
+# ================== Sidebar Controls ==================
+st.sidebar.header("Forecast Controls")
+scenario = st.sidebar.selectbox("Market Scenario", ["Realistic", "Optimistic (+15%)", "Pessimistic (-15%)"])
+horizon = st.sidebar.slider("Forecast Horizon (Days)", 7, 30, 21)
+noise_level = st.sidebar.slider("Noise Level", 0.0, 0.1, 0.03)
+run_btn = st.sidebar.button("🚀 Run AI Forecast")
+
+# ================== Run Forecast ==================
+if run_btn:
+    forecast = generate_forecast(sales_hist, horizon=horizon, scenario=scenario, noise_level=noise_level)
+    future_dates = [sales_hist.index[-1] + timedelta(days=i+1) for i in range(horizon)]
+    upper = forecast * 1.05
+    lower = forecast * 0.95
+
+    # ===== Forecast Chart =====
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=sales_hist.index, y=sales_hist.values, mode='lines+markers', name="History", line=dict(color='gray')))
+    fig.add_trace(go.Scatter(x=future_dates, y=forecast, mode='lines+markers', name="Forecast", line=dict(color=accent_color, width=3)))
+    fig.add_trace(go.Scatter(x=future_dates+future_dates[::-1], y=list(upper)+list(lower[::-1]),
+                             fill='toself', fillcolor='rgba(59,130,246,0.15)', line=dict(color='rgba(0,0,0,0)'), hoverinfo="skip", name="Error Margin"))
+    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color=text_color,
+                      xaxis_title="Date", yaxis_title="Sales ($)")
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ===== Forecast Table & Download =====
+    df_forecast = pd.DataFrame({
+        "Date": future_dates,
+        "Forecast": forecast,
+        "Lower": lower,
+        "Upper": upper
+    })
+    st.subheader("📊 Forecast Table")
+    st.dataframe(df_forecast.style.format({"Forecast":"${:,.0f}","Lower":"${:,.0f}","Upper":"${:,.0f}"}))
+    st.download_button("📥 Download Forecast CSV", df_forecast.to_csv(index=False), "forecast.csv", "text/csv")
