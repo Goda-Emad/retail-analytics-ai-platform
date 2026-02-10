@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import timedelta
 from catboost import CatBoostRegressor
 import joblib
+import os
 
 # ================== Page Setup ==================
 st.set_page_config(page_title="Retail AI Pro v9 | Real Forecast", layout="wide")
@@ -51,12 +52,12 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ================== Load Model ==================
-model: CatBoostRegressor = joblib.load("models/catboost_sales_model.pkl")
-feature_names = joblib.load("models/feature_names.pkl")  # ترتيب الـ features
+# مسارات مصححة: الملفات موجودة داخل نفس مجلد dashboard.py
+model: CatBoostRegressor = joblib.load("catboost_sales_model.pkl")
+feature_names = joblib.load("feature_names.pkl")
 
 # ================== Load Real Data ==================
-# استبدل path ده بمصدر بياناتك الفعلي
-df = pd.read_csv("data/sales_data.csv", parse_dates=["InvoiceDate"])
+df = pd.read_parquet("daily_sales_ready.parquet")
 df = df.sort_values("InvoiceDate")
 sales_hist = df.set_index("InvoiceDate")["TotalAmount"]
 
