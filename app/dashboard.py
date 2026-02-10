@@ -33,7 +33,7 @@ else:
 st.markdown(f"""
 <style>
 .stApp {{
-    background-image: url("images/bg_retail_1.png");
+    background-image: url("../images/bg_retail_1.png");
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -43,7 +43,7 @@ st.markdown(f"""
 
 st.markdown(f"""
 <div style='display:flex; align-items:center; padding:20px; position:fixed; width:100%; z-index:200;'>
-    <img src='images/retail_ai_pro_logo.webp' width='100'>
+    <img src='../images/retail_ai_pro_logo.webp' width='100'>
     <div style='margin-left:15px;'>
         <h1 style='margin:0; color:{accent_color};'>Retail AI Pro</h1>
         <h3 style='margin:0; color:{text_color};'>Built by Eng. Goda Emad</h3>
@@ -51,20 +51,33 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# ================== Paths ==================
+MODEL_PATH = "app/catboost_sales_model.pkl"
+FEATURES_PATH = "app/feature_names.pkl"
+DATA_PATH = "app/daily_sales_ready.parquet"
+
 # ================== Load Model ==================
-# مسارات مصححة: الملفات موجودة داخل نفس مجلد dashboard.py
-model: CatBoostRegressor = joblib.load("catboost_sales_model.pkl")
-feature_names = joblib.load("feature_names.pkl")
+if os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH):
+    model: CatBoostRegressor = joblib.load(MODEL_PATH)
+    feature_names = joblib.load(FEATURES_PATH)
+else:
+    st.error("⚠️ Model files not found! Make sure 'catboost_sales_model.pkl' and 'feature_names.pkl' exist in the app folder.")
+    st.stop()
 
 # ================== Load Real Data ==================
-df = pd.read_parquet("daily_sales_ready.parquet")
+if os.path.exists(DATA_PATH):
+    df = pd.read_parquet(DATA_PATH)
+else:
+    st.error("⚠️ Data file not found! Make sure 'daily_sales_ready.parquet' exists in the app folder.")
+    st.stop()
+
 df = df.sort_values("InvoiceDate")
 sales_hist = df.set_index("InvoiceDate")["TotalAmount"]
 
 # ================== Feature Engineering ==================
 def get_cyclical_features(date):
     day_sin = np.sin(2*np.pi*date.dayofweek/7)
-    week_sin = np.sin(2*np.pi*(date.dayofyear%7)/7)
+    week_sin = np.sin(2*np.pi*(date.isocalendar().week % 52)/52)
     month_sin = np.sin(2*np.pi*date.month/12)
     return day_sin, week_sin, month_sin
 
@@ -121,7 +134,7 @@ if run_btn:
     fig.add_trace(go.Scatter(x=future_dates, y=forecast, mode='lines+markers', name="Forecast", line=dict(color=accent_color, width=3)))
     fig.add_trace(go.Scatter(x=future_dates+future_dates[::-1], y=list(upper)+list(lower[::-1]),
                              fill='toself', fillcolor='rgba(59,130,246,0.15)', line=dict(color='rgba(0,0,0,0)'), hoverinfo="skip", name="Error Margin"))
-    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', font_color=text_color,
+    fig.update_layout(plot_bgcolor=bg_color, paper_bgcolor=bg_color, font_color=text_color,
                       xaxis_title="Date", yaxis_title="Sales ($)")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -136,7 +149,7 @@ if run_btn:
     st.dataframe(df_forecast.style.format({"Forecast":"${:,.0f}","Lower":"${:,.0f}","Upper":"${:,.0f}"}))
     st.download_button("📥 Download Forecast CSV", df_forecast.to_csv(index=False), "forecast.csv", "text/csv")
 
-    # ===== Backtest (حقيقي) =====
+    # ===== Backtest =====
     backtest_days = min(30, len(sales_hist)-7)
     actual_back = sales_hist[-backtest_days:]
     preds_back = []
