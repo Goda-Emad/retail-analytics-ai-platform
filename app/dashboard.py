@@ -18,36 +18,6 @@ DATA_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
 # ================== Page Setup ==================
 st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
 
-# ================== Dark/Light Mode ==================
-mode = st.sidebar.selectbox("Choose Theme", ["Dark 🌙", "Light 🌞"])
-if mode == "Dark 🌙":
-    bg_overlay = "rgba(15, 23, 42, 0.2)"  # شبه زجاجي
-    text_color = "#f1f5f9"
-    accent_color = "#3b82f6"
-    card_bg = "rgba(30, 41, 59, 0.7)"
-else:
-    bg_overlay = "rgba(255, 255, 255, 0.2)"  # شبه زجاجي فاتح
-    text_color = "#1e293b"
-    accent_color = "#2563eb"
-    card_bg = "rgba(255, 255, 255, 0.7)"
-
-# ================== CSS ==================
-st.markdown(f"""
-<style>
-.stApp {{
-    background-color: #f8f9fa;
-}}
-.metric-box {{
-    background-color: {card_bg}; 
-    padding: 20px; 
-    border-radius: 12px;
-    text-align: center; 
-    border: 1px solid {accent_color};
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}}
-</style>
-""", unsafe_allow_html=True)
-
 # ================== Load Model & Data ==================
 @st.cache_resource
 def load_essentials():
@@ -82,18 +52,62 @@ def load_essentials():
 model, feature_names, df = load_essentials()
 sales_hist = df.sort_index()["Daily_Sales"]
 
-# ================== Sidebar ==================
-st.sidebar.header("Forecast Settings")
-scenario = st.sidebar.selectbox("Choose Market Scenario", ["Realistic", "Optimistic (+15%)", "Pessimistic (-15%)"])
-horizon = st.sidebar.slider("Forecast Horizon (Days)", 7, 30, 14)
-noise_lvl = st.sidebar.slider("Market Volatility", 0.0, 0.1, 0.03)
-start_date = st.sidebar.date_input("Start Date", df.index.min().date())
-end_date = st.sidebar.date_input("End Date", df.index.max().date())
-run_btn = st.sidebar.button("Run Forecast")
+# ================== Dark/Light Mode ==================
+mode = st.sidebar.selectbox("اختر وضع الواجهة", ["Dark 🌙", "Light 🌞"])
+if mode == "Dark 🌙":
+    overlay = "rgba(15,23,42,0.3)"
+    text_color = "#f1f5f9"
+    accent_color = "#3b82f6"
+    card_bg = "rgba(30,41,59,0.6)"
+else:
+    overlay = "rgba(255,255,255,0.3)"
+    text_color = "#1e293b"
+    accent_color = "#2563eb"
+    card_bg = "rgba(255,255,255,0.6)"
 
-# ================== Forecast Function ==================
+# ================== CSS Glassmorphic ==================
+st.markdown(f"""
+<style>
+.stApp::before {{
+    content: "";
+    position: fixed; top:0; left:0; width:100%; height:100%;
+    background: {overlay};
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: -1;
+}}
+.header-container {{
+    display:flex; align-items:center; padding:20px;
+    background-color:{card_bg}; border-radius:15px; margin-bottom:25px;
+    border-left:10px solid {accent_color}; box-shadow:0 4px 15px rgba(0,0,0,0.3);
+}}
+.metric-box {{
+    background-color:{card_bg}; padding:20px; border-radius:12px;
+    text-align:center; border:1px solid {accent_color};
+    box-shadow:0 2px 10px rgba(0,0,0,0.1);
+}}
+.sidebar-link {{
+    display:block; margin-top:5px; color:{accent_color}; font-weight:bold; text-decoration:none;
+}}
+</style>
+""", unsafe_allow_html=True)
+
+# ================== Header ==================
+st.markdown(f"""
+<div class="header-container">
+    <div style="margin-left:0px;">
+        <h1 style="margin:0; color:{accent_color};">Retail AI Pro</h1>
+        <p style="margin:0; color:{text_color}; opacity:0.8; font-weight:bold;">Eng. Goda Emad | Smart Forecasting System</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ================== Forecast Functions ==================
 def get_cyclical_features(date):
-    return np.sin(2*np.pi*date.dayofweek/7), np.sin(2*np.pi*(date.isocalendar().week%52)/52), np.sin(2*np.pi*date.month/12)
+    day_sin = np.sin(2*np.pi*date.dayofweek/7)
+    week_sin = np.sin(2*np.pi*(date.isocalendar().week % 52)/52)
+    month_sin = np.sin(2*np.pi*date.month/12)
+    return day_sin, week_sin, month_sin
 
 def generate_forecast(hist_series, horizon, scenario, noise_val):
     forecast_values = []
@@ -111,57 +125,63 @@ def generate_forecast(hist_series, horizon, scenario, noise_val):
             if feat not in X_df.columns: X_df[feat] = 0
         X_df = X_df[feature_names]
         pred = model.predict(X_df)[0]
-        if "Optimistic" in scenario: pred *= 1.15
-        elif "Pessimistic" in scenario: pred *= 0.85
-        pred = max(0, pred * (1 + np.random.normal(0, noise_val)))
+        if scenario == "متفائل (+15%)": pred *= 1.15
+        elif scenario == "متشائم (-15%)": pred *= 0.85
+        pred = max(0, pred*(1+np.random.normal(0,noise_val)))
         forecast_values.append(pred)
         current_hist.loc[next_date] = pred
     return np.array(forecast_values), current_hist.index[-horizon:]
 
-# ================== Main ==================
-st.title("Retail AI Pro | Smart Forecasting")
-st.subheader("Forecasting Sales with Interactive Scenarios")
+# ================== Sidebar ==================
+with st.sidebar:
+    st.header("🛒 إعدادات التوقعات")
+    scenario = st.selectbox("اختار سيناريو السوق", ["واقعي", "متفائل (+15%)", "متشائم (-15%)"])
+    horizon = st.slider("عدد أيام التوقع", 7, 30, 14)
+    noise_lvl = st.slider("تقلب السوق", 0.0, 0.1, 0.03)
+    start_date = st.date_input("من تاريخ", df.index.min().date())
+    end_date = st.date_input("إلى تاريخ", df.index.max().date())
+    run_btn = st.button("🚀 تشغيل التوقعات", use_container_width=True)
 
+# ================== Main ==================
 if run_btn:
-    filtered_sales = sales_hist[start_date:end_date]
+    df_filtered = sales_hist[start_date:end_date]
     
-    # Generate forecasts for all scenarios for comparison
-    scenarios = ["Realistic", "Optimistic (+15%)", "Pessimistic (-15%)"]
+    # Generate forecasts for all scenarios
+    scenarios = ["واقعي", "متفائل (+15%)", "متشائم (-15%)"]
     colors = [accent_color, "green", "red"]
     
     fig = go.Figure()
-    # Historical
-    fig.add_trace(go.Scatter(x=filtered_sales.index, y=filtered_sales.values, name="Historical", line=dict(color="gray", width=2)))
+    fig.add_trace(go.Scatter(x=df_filtered.index, y=df_filtered.values, name="البيانات التاريخية", line=dict(color="gray", width=2)))
     
     for sc, color in zip(scenarios, colors):
-        preds, dates = generate_forecast(filtered_sales, horizon, sc, noise_lvl)
-        fig.add_trace(go.Scatter(x=dates, y=preds, name=f"Forecast ({sc})", line=dict(color=color, width=3)))
+        preds, dates = generate_forecast(df_filtered, horizon, sc, noise_lvl)
+        fig.add_trace(go.Scatter(x=dates, y=preds, name=f"توقع ({sc})", line=dict(color=color, width=3)))
     
     fig.update_layout(
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
         font_color=text_color,
-        xaxis_title="Date",
-        yaxis_title="Sales ($)",
+        xaxis_title="التاريخ",
+        yaxis_title="المبيعات ($)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     st.plotly_chart(fig, use_container_width=True)
     
-    # KPI Cards (فوق الرسم)
+    # KPI Cards
     c1, c2, c3 = st.columns(3)
-    total_forecast = sum([generate_forecast(filtered_sales, horizon, sc, noise_lvl)[0].sum() for sc in scenarios])/len(scenarios)
+    total_forecast = sum([generate_forecast(df_filtered, horizon, sc, noise_lvl)[0].sum() for sc in scenarios])/len(scenarios)
     avg_forecast = total_forecast / horizon
-    c1.markdown(f"<div class='metric-box'>Total Forecast<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-box'>Average Daily<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-box'>Confidence Score<br><h2>82%</h2></div>", unsafe_allow_html=True)
+    c1.markdown(f"<div class='metric-box'>إجمالي المبيعات<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='metric-box'>المعدل اليومي<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='metric-box'>ثقة النموذج<br><h2>82%</h2></div>", unsafe_allow_html=True)
 else:
-    st.info("👈 Use the sidebar to run your AI-powered sales forecast.")
+    st.info("👈 استخدم الشريط الجانبي لتشغيل توقعات المبيعات")
 
-# ================== Footer with Links ==================
+# ================== Footer ==================
 st.markdown(f"""
-<div style="text-align:center; padding:20px; color:{text_color}; opacity:0.7; font-size:0.9rem;">
-    Retail Analytics Platform | © 2025 Eng. Goda Emad <br>
-    <a href='https://www.linkedin.com/in/goda-emad/' target='_blank'>LinkedIn</a> | 
-    <a href='https://github.com/Goda-Emad' target='_blank'>GitHub</a>
+<div style="text-align:center; padding:15px; color:{text_color}; opacity:0.7; font-size:0.85rem;">
+    Eng. Goda Emad | 
+    <a href='https://www.linkedin.com/in/goda-emad/' class='sidebar-link'>LinkedIn</a> | 
+    <a href='https://github.com/Goda-Emad' class='sidebar-link'>GitHub</a>
 </div>
 """, unsafe_allow_html=True)
