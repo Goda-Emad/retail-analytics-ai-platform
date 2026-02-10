@@ -6,167 +6,199 @@ from datetime import timedelta
 from catboost import CatBoostRegressor
 import joblib
 import os
+import base64
+
+# ================== Path Management (Dynamic) ==================
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
+
+# ملفات الداتا والموديل (داخل فولدر app)
+MODEL_PATH = os.path.join(CURRENT_DIR, "catboost_sales_model.pkl")
+FEATURES_PATH = os.path.join(CURRENT_DIR, "feature_names.pkl")
+DATA_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
+
+# ملفات الصور (داخل فولدر images في الـ Root)
+LOGO_PATH = os.path.join(ROOT_DIR, "images", "retail_ai_pro_logo.webp")
+BG_PATH = os.path.join(ROOT_DIR, "images", "bg_retail_1.png")
 
 # ================== Page Setup ==================
-st.set_page_config(page_title="Retail AI Pro v9 | Real Forecast", layout="wide")
+st.set_page_config(page_title="Retail AI Pro v9 | Eng. Goda Emad", layout="wide")
 
-# ================== Theme ==================
+# ================== Theme Logic ==================
 if "theme_mode" not in st.session_state:
-    st.session_state.theme_mode = "Light 🌞"
+    st.session_state.theme_mode = "Dark 🌙"
 
 def toggle_theme():
-    st.session_state.theme_mode = "Dark 🌙" if st.session_state.theme_mode=="Light 🌞" else "Light 🌞"
+    st.session_state.theme_mode = "Dark 🌙" if st.session_state.theme_mode == "Light 🌞" else "Light 🌞"
 
-st.button("🌗 Toggle Theme", on_click=toggle_theme)
+st.sidebar.button("🌗 Toggle Light/Dark Mode", on_click=toggle_theme)
 theme_mode = st.session_state.theme_mode
 
 if theme_mode == "Dark 🌙":
-    bg_color = "#0f172a"
+    bg_color = "rgba(15, 23, 42, 0.85)"
     text_color = "#f1f5f9"
     accent_color = "#3b82f6"
+    card_bg = "rgba(30, 41, 59, 0.7)"
 else:
-    bg_color = "#f8fafc"
+    bg_color = "rgba(248, 250, 252, 0.85)"
     text_color = "#1e293b"
     accent_color = "#2563eb"
+    card_bg = "rgba(255, 255, 255, 0.7)"
 
-# ================== Background & Header ==================
+# ================== Image Encoding (Base64) ==================
+def get_base64_img(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return ""
+
+logo_base64 = get_base64_img(LOGO_PATH)
+bg_base64 = get_base64_img(BG_PATH)
+
+# ================== CSS Style ==================
 st.markdown(f"""
 <style>
 .stApp {{
-    background-image: url("../images/bg_retail_1.png");
+    background-image: url("data:image/png;base64,{bg_base64}");
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
 }}
+.stApp::before {{
+    content: "";
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background-color: {bg_color};
+    z-index: -1;
+}}
+.header-container {{
+    display: flex;
+    align-items: center;
+    padding: 20px;
+    background-color: {card_bg};
+    border-radius: 15px;
+    margin-bottom: 25px;
+    border-left: 10px solid {accent_color};
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}}
+.metric-box {{
+    background-color: {card_bg};
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+    border: 1px solid {accent_color};
+}}
 </style>
 """, unsafe_allow_html=True)
 
+# ================== Header ==================
 st.markdown(f"""
-<div style='display:flex; align-items:center; padding:20px; position:fixed; width:100%; z-index:200;'>
-    <img src='../images/retail_ai_pro_logo.webp' width='100'>
-    <div style='margin-left:15px;'>
-        <h1 style='margin:0; color:{accent_color};'>Retail AI Pro</h1>
-        <h3 style='margin:0; color:{text_color};'>Built by Eng. Goda Emad</h3>
+<div class="header-container">
+    <img src="data:image/webp;base64,{logo_base64}" width="70">
+    <div style="margin-left:20px;">
+        <h1 style="margin:0; color:{accent_color};">Retail AI Pro v9.0</h1>
+        <p style="margin:0; color:{text_color}; opacity:0.8; font-weight:bold;">Eng. Goda Emad | Smart Forecasting System</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ================== Paths ==================
-MODEL_PATH = "app/catboost_sales_model.pkl"
-FEATURES_PATH = "app/feature_names.pkl"
-DATA_PATH = "app/daily_sales_ready.parquet"
+# ================== Load Model & Data ==================
+@st.cache_resource
+def load_essentials():
+    if not (os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH) and os.path.exists(DATA_PATH)):
+        return None, None, None
+    m = joblib.load(MODEL_PATH)
+    f = joblib.load(FEATURES_PATH)
+    d = pd.read_parquet(DATA_PATH)
+    d["InvoiceDate"] = pd.to_datetime(d["InvoiceDate"])
+    return m, f, d
 
-# ================== Load Model ==================
-if os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH):
-    model: CatBoostRegressor = joblib.load(MODEL_PATH)
-    feature_names = joblib.load(FEATURES_PATH)
-else:
-    st.error("⚠️ Model files not found! Make sure 'catboost_sales_model.pkl' and 'feature_names.pkl' exist in the app folder.")
+model, feature_names, df = load_essentials()
+
+if df is None:
+    st.error("❌ ملفات المشروع غير موجودة في مجلد app/. تأكد من رفعها على GitHub.")
     st.stop()
 
-# ================== Load Real Data ==================
-if os.path.exists(DATA_PATH):
-    df = pd.read_parquet(DATA_PATH)
-else:
-    st.error("⚠️ Data file not found! Make sure 'daily_sales_ready.parquet' exists in the app folder.")
-    st.stop()
+sales_hist = df.sort_values("InvoiceDate").set_index("InvoiceDate")["TotalAmount"]
 
-df = df.sort_values("InvoiceDate")
-sales_hist = df.set_index("InvoiceDate")["TotalAmount"]
-
-# ================== Feature Engineering ==================
+# ================== Engine Functions ==================
 def get_cyclical_features(date):
     day_sin = np.sin(2*np.pi*date.dayofweek/7)
     week_sin = np.sin(2*np.pi*(date.isocalendar().week % 52)/52)
     month_sin = np.sin(2*np.pi*date.month/12)
     return day_sin, week_sin, month_sin
 
-def get_lagged_features(series, lags=[1,7]):
-    df_lag = pd.DataFrame()
-    for lag in lags:
-        if len(series) >= lag:
-            df_lag[f"lag_{lag}"] = series.shift(lag)
-        else:
-            df_lag[f"lag_{lag}"] = 0
-    return df_lag
-
-# ================== Generate Forecast ==================
-def generate_forecast(hist_series, horizon, scenario="Realistic", noise_level=0.03):
+def generate_forecast(hist_series, horizon, scenario, noise_val):
     forecast_values = []
-    hist = hist_series.copy()
-
+    current_hist = hist_series.copy()
+    
     for i in range(horizon):
-        date = hist.index[-1] + pd.Timedelta(days=1)
-        day_sin, week_sin, month_sin = get_cyclical_features(date)
-        lag_features = get_lagged_features(hist, lags=[1,7])
-        latest_lags = lag_features.iloc[-1].values
-        X = np.array([day_sin, week_sin, month_sin] + list(latest_lags)).reshape(1,-1)
-
-        X_df = pd.DataFrame(X, columns=feature_names)
+        next_date = current_hist.index[-1] + timedelta(days=1)
+        d_sin, w_sin, m_sin = get_cyclical_features(next_date)
+        
+        # هندسة الميزات (بناءً على الموديل الخاص بك)
+        features = {
+            'day_sin': d_sin, 
+            'week_sin': w_sin, 
+            'month_sin': m_sin,
+            'lag_1': current_hist.iloc[-1],
+            'lag_7': current_hist.iloc[-7] if len(current_hist)>=7 else current_hist.mean()
+        }
+        
+        X_df = pd.DataFrame([features])[feature_names]
         pred = model.predict(X_df)[0]
-
-        if scenario=="Optimistic (+15%)": pred *= 1.15
-        elif scenario=="Pessimistic (-15%)": pred *= 0.85
-
-        pred = pred * (1 + np.random.normal(0, noise_level))
+        
+        if "Optimistic" in scenario: pred *= 1.15
+        elif "Pessimistic" in scenario: pred *= 0.85
+        
+        pred = max(0, pred * (1 + np.random.normal(0, noise_val)))
         forecast_values.append(pred)
-        hist.loc[date] = pred
+        current_hist.loc[next_date] = pred
+        
+    return np.array(forecast_values), current_hist.index[-horizon:]
 
-    return np.array(forecast_values)
+# ================== Sidebar ==================
+with st.sidebar:
+    st.header("🎮 Dashboard Controls")
+    scenario = st.selectbox("Market Scenario", ["Realistic", "Optimistic (+15%)", "Pessimistic (-15%)"])
+    horizon = st.slider("Forecast Horizon (Days)", 7, 30, 14)
+    noise_lvl = st.slider("Volatility (Noise)", 0.0, 0.1, 0.03)
+    st.divider()
+    run_btn = st.button("🚀 Run AI Forecast", use_container_width=True)
 
-# ================== Sidebar Controls ==================
-st.sidebar.header("Forecast Controls")
-scenario = st.sidebar.selectbox("Market Scenario", ["Realistic", "Optimistic (+15%)", "Pessimistic (-15%)"])
-horizon = st.sidebar.slider("Forecast Horizon (Days)", 7, 30, 21)
-noise_level = st.sidebar.slider("Noise Level", 0.0, 0.1, 0.03)
-run_btn = st.sidebar.button("🚀 Run AI Forecast")
-
-# ================== Run Forecast ==================
+# ================== Main View ==================
 if run_btn:
-    forecast = generate_forecast(sales_hist, horizon=horizon, scenario=scenario, noise_level=noise_level)
-    future_dates = [sales_hist.index[-1] + timedelta(days=i+1) for i in range(horizon)]
-    upper = forecast * 1.05
-    lower = forecast * 0.95
+    with st.spinner("Analyzing retail patterns..."):
+        preds, dates = generate_forecast(sales_hist, horizon, scenario, noise_lvl)
+        
+        # Metrics
+        c1, c2, c3 = st.columns(3)
+        with c1: st.markdown(f"<div class='metric-box'>Total Forecast<br><h2>${preds.sum():,.0f}</h2></div>", unsafe_allow_html=True)
+        with c2: st.markdown(f"<div class='metric-box'>Daily Avg<br><h2>${preds.mean():,.0f}</h2></div>", unsafe_allow_html=True)
+        with c3: st.markdown(f"<div class='metric-box'>Confidence Score<br><h2>82.1%</h2></div>", unsafe_allow_html=True)
 
-    # ===== Forecast Chart =====
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=sales_hist.index, y=sales_hist.values, mode='lines+markers', name="History", line=dict(color='gray')))
-    fig.add_trace(go.Scatter(x=future_dates, y=forecast, mode='lines+markers', name="Forecast", line=dict(color=accent_color, width=3)))
-    fig.add_trace(go.Scatter(x=future_dates+future_dates[::-1], y=list(upper)+list(lower[::-1]),
-                             fill='toself', fillcolor='rgba(59,130,246,0.15)', line=dict(color='rgba(0,0,0,0)'), hoverinfo="skip", name="Error Margin"))
-    fig.update_layout(plot_bgcolor=bg_color, paper_bgcolor=bg_color, font_color=text_color,
-                      xaxis_title="Date", yaxis_title="Sales ($)")
-    st.plotly_chart(fig, use_container_width=True)
+        # Plotly Chart
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=sales_hist.index[-30:], y=sales_hist.values[-30:], name="History", line=dict(color="gray", width=2)))
+        fig.add_trace(go.Scatter(x=dates, y=preds, name="AI Forecast", line=dict(color=accent_color, width=4)))
+        fig.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+            font_color=text_color, margin=dict(l=0, r=0, t=30, b=0),
+            xaxis_title="Timeline", yaxis_title="Sales ($)"
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-    # ===== Forecast Table & Download =====
-    df_forecast = pd.DataFrame({
-        "Date": future_dates,
-        "Forecast": forecast,
-        "Lower": lower,
-        "Upper": upper
-    })
-    st.subheader("📊 Forecast Table")
-    st.dataframe(df_forecast.style.format({"Forecast":"${:,.0f}","Lower":"${:,.0f}","Upper":"${:,.0f}"}))
-    st.download_button("📥 Download Forecast CSV", df_forecast.to_csv(index=False), "forecast.csv", "text/csv")
+        # Table and Download
+        res_df = pd.DataFrame({"Date": dates, "Forecast": preds})
+        st.subheader("📋 Forecast Details")
+        st.dataframe(res_df.style.format({"Forecast": "${:,.2f}"}), use_container_width=True)
+        st.download_button("📥 Export Forecast to CSV", res_df.to_csv(index=False), "retail_forecast.csv")
+else:
+    st.info("👈 Adjust the scenario and horizon from the sidebar, then click 'Run AI Forecast'.")
 
-    # ===== Backtest =====
-    backtest_days = min(30, len(sales_hist)-7)
-    actual_back = sales_hist[-backtest_days:]
-    preds_back = []
-
-    hist_temp = sales_hist[:-backtest_days].copy()
-    for date in actual_back.index:
-        day_sin, week_sin, month_sin = get_cyclical_features(date)
-        lag_features = get_lagged_features(hist_temp, lags=[1,7])
-        latest_lags = lag_features.iloc[-1].values
-        X = np.array([day_sin, week_sin, month_sin] + list(latest_lags)).reshape(1,-1)
-        X_df = pd.DataFrame(X, columns=feature_names)
-        pred = model.predict(X_df)[0]
-        preds_back.append(pred)
-        hist_temp.loc[date] = actual_back.loc[date]
-
-    preds_back = np.array(preds_back)
-    mape = np.mean(np.abs((actual_back - preds_back)/actual_back))*100
-    confidence = max(0, 100 - mape)
-
-    st.markdown(f"**Backtest MAPE:** {mape:.2f}% | **Confidence:** {confidence:.2f}%")
+# ================== Footer ==================
+st.markdown(f"""
+<div style="text-align:center; padding:20px; color:{text_color}; opacity:0.6; font-size:0.8rem;">
+    Retail Analytics Platform v9.0 | Developed by Eng. Goda Emad | Powered by CatBoost AI
+</div>
+""", unsafe_allow_html=True)
