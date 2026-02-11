@@ -1,4 +1,4 @@
-# ==================== app.py (Pro Supermarket Dashboard - Tabs Version) ====================
+# ==================== app_pro.py ====================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -22,10 +22,6 @@ st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
 # ================== Load Model & Data ==================
 @st.cache_resource
 def load_essentials():
-    if not (os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH)
-            and os.path.exists(DAILY_SALES_PATH) and os.path.exists(PRODUCT_ANALYTICS_PATH)):
-        st.error("❌ Missing one or more essential files!")
-        return None, None, None, None
     model = joblib.load(MODEL_PATH)
     features = joblib.load(FEATURES_PATH)
     daily_df = pd.read_parquet(DAILY_SALES_PATH)
@@ -33,8 +29,6 @@ def load_essentials():
 
     if daily_df.index.name is not None:
         daily_df = daily_df.reset_index()
-
-    # تحديد عمود التاريخ
     date_col = next((c for c in daily_df.columns if 'date' in c.lower()), None)
     if date_col:
         daily_df[date_col] = pd.to_datetime(daily_df[date_col])
@@ -42,15 +36,8 @@ def load_essentials():
     else:
         st.error("❌ No date column found in daily sales.")
         st.stop()
-
     if "Daily_Sales" not in daily_df.columns:
-        possible_sales = [c for c in daily_df.columns if 'sales' in c.lower()]
-        if possible_sales:
-            daily_df = daily_df.rename(columns={possible_sales[0]: "Daily_Sales"})
-        else:
-            st.error("❌ No Daily_Sales column found.")
-            st.stop()
-
+        daily_df = daily_df.rename(columns={daily_df.columns[0]: "Daily_Sales"})
     return model, features, daily_df, product_df
 
 model, feature_names, sales_df, product_df = load_essentials()
@@ -70,7 +57,7 @@ else:
     card_bg = "rgba(255, 255, 255, 0.5)"
     border_color = "rgba(0, 0, 0, 0.1)"
 
-# ================== Online Supermarket Background ==================
+# ================== Background ==================
 BG_URL = "https://images.unsplash.com/photo-1566210130058-f63a3d17338b?auto=format&fit=crop&w=1950&q=80"
 st.markdown(f"""
 <style>
@@ -128,12 +115,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ================== Forecast Functions ==================
+# ================== Forecast Enhancements ==================
 def get_cyclical_features(date):
-    day_sin = np.sin(2*np.pi*date.dayofweek/7)
-    week_sin = np.sin(2*np.pi*(date.isocalendar().week % 52)/52)
-    month_sin = np.sin(2*np.pi*date.month/12)
-    return day_sin, week_sin, month_sin
+    return np.sin(2*np.pi*date.dayofweek/7), np.sin(2*np.pi*(date.isocalendar().week % 52)/52), np.sin(2*np.pi*date.month/12)
 
 def generate_forecast(hist_series, horizon, scenario, noise_val):
     forecast_values = []
@@ -141,10 +125,14 @@ def generate_forecast(hist_series, horizon, scenario, noise_val):
     for i in range(horizon):
         next_date = current_hist.index[-1] + timedelta(days=1)
         d_sin, w_sin, m_sin = get_cyclical_features(next_date)
+        rolling_30 = current_hist[-30:].mean() if len(current_hist)>=30 else current_hist.mean()
         features_dict = {
             'day_sin': d_sin, 'week_sin': w_sin, 'month_sin': m_sin,
             'lag_1': current_hist.iloc[-1],
-            'lag_7': current_hist.iloc[-7] if len(current_hist)>=7 else current_hist.mean()
+            'lag_7': current_hist.iloc[-7] if len(current_hist)>=7 else current_hist.mean(),
+            'lag_30': current_hist.iloc[-30] if len(current_hist)>=30 else current_hist.mean(),
+            'rolling_mean_30': rolling_30,
+            'is_month_end': int(next_date.is_month_end)
         }
         X_df = pd.DataFrame([features_dict])
         for feat in feature_names:
@@ -169,79 +157,93 @@ with st.sidebar:
     run_btn = st.button("🚀 تشغيل التوقعات", use_container_width=True)
 
 # ================== Tabs ==================
-tabs = st.tabs(["📈 Forecast", "🏆 Top Products Analytics"])
+tabs = st.tabs(["📈 Forecast", "🏆 Product Analytics"])
 
-# ================== Tab 1: Forecast ==================
+# ================== Tab 1: Forecast + Backtest ==================
 with tabs[0]:
     if run_btn:
-        df_filtered = sales_df[start_date:end_date]
-        scenarios_list = ["واقعي", "متفائل (+15%)", "متشائم (-15%)"]
-        colors = ["#00D4FF", "#00FF88", "#FF4B2B"]
-        fig_forecast = go.Figure()
-        fig_forecast.add_trace(go.Scatter(
-            x=df_filtered.index,
-            y=df_filtered.values,
-            name="البيانات التاريخية",
-            fill='tozeroy',
-            fillcolor='rgba(150,150,150,0.1)',
-            line=dict(color="rgba(200,200,200,0.5)", width=2)
-        ))
-
-        forecasts_dict = {}
-        for sc, color in zip(scenarios_list, colors):
-            preds, dates = generate_forecast(df_filtered, horizon, sc, noise_lvl)
-            forecasts_dict[sc] = preds
+        with st.spinner("⚡ جاري تشغيل التنبؤات..."):
+            df_filtered = sales_df[start_date:end_date]
+            scenarios_list = ["واقعي", "متفائل (+15%)", "متشائم (-15%)"]
+            colors = ["#00D4FF", "#00FF88", "#FF4B2B"]
+            fig_forecast = go.Figure()
             fig_forecast.add_trace(go.Scatter(
-                x=dates,
-                y=preds,
-                name=f"توقع ({sc})",
-                mode='lines+markers',
-                line=dict(color=color, width=4, shape='spline'),
-                marker=dict(size=6)
+                x=df_filtered.index,
+                y=df_filtered.values,
+                name="البيانات التاريخية",
+                fill='tozeroy',
+                fillcolor='rgba(150,150,150,0.1)',
+                line=dict(color="rgba(200,200,200,0.5)", width=2)
             ))
 
-        fig_forecast.update_layout(
-            title="Forecast for Next Days",
-            hovermode="x unified",
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            font_color=text_color,
-            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
-            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="المبيعات ($)"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
-        )
-        st.plotly_chart(fig_forecast, use_container_width=True)
+            forecasts_dict = {}
+            for sc, color in zip(scenarios_list, colors):
+                preds, dates = generate_forecast(df_filtered, horizon, sc, noise_lvl)
+                forecasts_dict[sc] = preds
+                fig_forecast.add_trace(go.Scatter(
+                    x=dates,
+                    y=preds,
+                    name=f"توقع ({sc})",
+                    mode='lines+markers',
+                    line=dict(color=color, width=4, shape='spline'),
+                    marker=dict(size=6)
+                ))
 
-        # KPI Cards
-        st.markdown("<br>", unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        total_forecast = np.mean([forecasts_dict[sc].sum() for sc in scenarios_list])
-        avg_forecast = total_forecast / horizon
-        c1.markdown(f"<div class='metric-box'>إجمالي المبيعات المتوقعة<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='metric-box'>المعدل اليومي المستهدف<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
-        c3.markdown(f"<div class='metric-box'>دقة نموذج التنبؤ AI<br><h2>82%</h2></div>", unsafe_allow_html=True)
+            # ================== Backtest (Last 30 days) ==================
+            backtest_hist = df_filtered[-30:]
+            if len(backtest_hist)>=7:
+                preds_back, _ = generate_forecast(df_filtered[:-30], 30, "واقعي", noise_lvl=0)
+                fig_forecast.add_trace(go.Scatter(
+                    x=backtest_hist.index,
+                    y=preds_back,
+                    name="Backtest (Predicted)",
+                    line=dict(color="#FFD700", width=3, dash='dot')
+                ))
 
-        # Download CSV
-        def get_csv_download(forecasts_dict, dates):
+            fig_forecast.update_layout(
+                title="Forecast + Backtest",
+                hovermode="x unified",
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color=text_color,
+                xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
+                yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="المبيعات ($)"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+            )
+            st.plotly_chart(fig_forecast, use_container_width=True)
+
+            # KPI Cards
+            st.markdown("<br>", unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            total_forecast = np.mean([forecasts_dict[sc].sum() for sc in scenarios_list])
+            avg_forecast = total_forecast / horizon
+            c1.markdown(f"<div class='metric-box'>إجمالي المبيعات المتوقعة<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
+            c2.markdown(f"<div class='metric-box'>المعدل اليومي المستهدف<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
+            c3.markdown(f"<div class='metric-box'>دقة نموذج التنبؤ AI<br><h2>82%</h2></div>", unsafe_allow_html=True)
+
+            # Download CSV
             df_download = pd.DataFrame({"Date": dates})
             for sc, preds in forecasts_dict.items():
                 df_download[sc] = preds
-            return df_download
+            st.download_button(
+                label="⬇️ تحميل التوقعات CSV",
+                data=df_download.to_csv(index=False).encode(),
+                file_name="sales_forecast.csv",
+                mime="text/csv"
+            )
+            st.success("✅ التنبؤات اكتملت بنجاح!")
 
-        csv_data = get_csv_download(forecasts_dict, dates).to_csv(index=False).encode()
-        st.download_button(
-            label="⬇️ تحميل التوقعات CSV",
-            data=csv_data,
-            file_name="sales_forecast.csv",
-            mime="text/csv"
-        )
-    else:
-        st.info("اضغط على زر تشغيل التوقعات في الشريط الجانبي لعرض Forecast + KPI Cards + Download CSV.")
-
-# ================== Tab 2: Top Products Analytics ==================
+# ================== Tab 2: Product Analytics with Filter ==================
 with tabs[1]:
-    top_products = product_df.groupby('Product')['Quantity'].sum().sort_values(ascending=False).head(10)
-    st.subheader("Top 10 Products Bar Chart")
+    product_list = product_df['Product'].unique().tolist()
+    product_filter = st.selectbox("اختار منتج لتحليل محدد", ["All Products"] + product_list)
+    if product_filter != "All Products":
+        filtered_df = product_df[product_df['Product']==product_filter]
+    else:
+        filtered_df = product_df.copy()
+
+    top_products = filtered_df.groupby('Product')['Quantity'].sum().sort_values(ascending=False).head(10)
+    st.subheader("Top Products Bar Chart")
     fig_bar = go.Figure([go.Bar(
         x=top_products.index,
         y=top_products.values,
@@ -256,8 +258,8 @@ with tabs[1]:
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.subheader("Top 5 Products Sales Share Pie Chart")
-    pie_data = product_df.groupby('Product')['Quantity'].sum().sort_values(ascending=False).head(5)
+    st.subheader("Top Products Sales Share Pie Chart")
+    pie_data = top_products.head(5)
     fig_pie = go.Figure([go.Pie(
         labels=pie_data.index,
         values=pie_data.values,
@@ -270,7 +272,7 @@ with tabs[1]:
     st.plotly_chart(fig_pie, use_container_width=True)
 
     st.subheader("Full Products Table")
-    st.dataframe(product_df.sort_values(by='Quantity', ascending=False).head(20))
+    st.dataframe(filtered_df.sort_values(by='Quantity', ascending=False).head(20))
 
 # ================== Footer ==================
 st.markdown(f"""
