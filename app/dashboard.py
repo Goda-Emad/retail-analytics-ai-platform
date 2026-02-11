@@ -1,4 +1,4 @@
-# ==================== app.py (Supermarket Professional + Online Backgrounds) ====================
+# ==================== app.py (Pro Supermarket Dashboard - Tabs Version) ====================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,14 +7,14 @@ from datetime import timedelta
 from catboost import CatBoostRegressor
 import joblib
 import os
-import base64
 import requests
 
 # ================== Paths ==================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(CURRENT_DIR, "catboost_sales_model.pkl")
 FEATURES_PATH = os.path.join(CURRENT_DIR, "feature_names.pkl")
-DATA_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
+DAILY_SALES_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
+PRODUCT_ANALYTICS_PATH = os.path.join(CURRENT_DIR, "product_analytics.parquet")
 
 # ================== Page Setup ==================
 st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
@@ -22,36 +22,38 @@ st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
 # ================== Load Model & Data ==================
 @st.cache_resource
 def load_essentials():
-    if not (os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH) and os.path.exists(DATA_PATH)):
-        return None, None, None
-    
+    if not (os.path.exists(MODEL_PATH) and os.path.exists(FEATURES_PATH)
+            and os.path.exists(DAILY_SALES_PATH) and os.path.exists(PRODUCT_ANALYTICS_PATH)):
+        st.error("❌ Missing one or more essential files!")
+        return None, None, None, None
     model = joblib.load(MODEL_PATH)
     features = joblib.load(FEATURES_PATH)
-    df = pd.read_parquet(DATA_PATH)
+    daily_df = pd.read_parquet(DAILY_SALES_PATH)
+    product_df = pd.read_parquet(PRODUCT_ANALYTICS_PATH)
 
-    if df.index.name is not None:
-        df = df.reset_index()
-    
-    date_col = next((c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()), None)
+    if daily_df.index.name is not None:
+        daily_df = daily_df.reset_index()
+
+    # تحديد عمود التاريخ
+    date_col = next((c for c in daily_df.columns if 'date' in c.lower()), None)
     if date_col:
-        df[date_col] = pd.to_datetime(df[date_col])
-        df = df.set_index(date_col)
+        daily_df[date_col] = pd.to_datetime(daily_df[date_col])
+        daily_df = daily_df.set_index(date_col)
     else:
-        st.error(f"❌ لم يتم العثور على عمود تاريخ. الأعمدة: {df.columns.tolist()}")
+        st.error("❌ No date column found in daily sales.")
         st.stop()
-    
-    if "Daily_Sales" not in df.columns:
-        possible_sales = [c for c in df.columns if 'sales' in c.lower() or 'amount' in c.lower() or 'total' in c.lower()]
-        if possible_sales:
-            df = df.rename(columns={possible_sales[0]: "Daily_Sales"})
-        else:
-            st.error("❌ لم يتم العثور على عمود المبيعات.")
-            st.stop()
-    
-    return model, features, df
 
-model, feature_names, df = load_essentials()
-sales_hist = df.sort_index()["Daily_Sales"]
+    if "Daily_Sales" not in daily_df.columns:
+        possible_sales = [c for c in daily_df.columns if 'sales' in c.lower()]
+        if possible_sales:
+            daily_df = daily_df.rename(columns={possible_sales[0]: "Daily_Sales"})
+        else:
+            st.error("❌ No Daily_Sales column found.")
+            st.stop()
+
+    return model, features, daily_df, product_df
+
+model, feature_names, sales_df, product_df = load_essentials()
 
 # ================== Dark/Light Mode ==================
 mode = st.sidebar.selectbox("اختر وضع الواجهة", ["Dark 🌙", "Light 🌞"])
@@ -68,15 +70,12 @@ else:
     card_bg = "rgba(255, 255, 255, 0.5)"
     border_color = "rgba(0, 0, 0, 0.1)"
 
-# ================== Online Background ==================
-# استخدمنا صورة مناسبة لمشروع سوبرماركت
-BG_URL = "https://images.unsplash.com/photo-1606813903037-7a6d4a1e0324?auto=format&fit=crop&w=1950&q=80"
-bg_base64 = base64.b64encode(requests.get(BG_URL).content).decode()
-
+# ================== Online Supermarket Background ==================
+BG_URL = "https://images.unsplash.com/photo-1566210130058-f63a3d17338b?auto=format&fit=crop&w=1950&q=80"
 st.markdown(f"""
 <style>
 .stApp {{
-    background-image: url("data:image/jpg;base64,{bg_base64}");
+    background-image: url("{BG_URL}");
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
@@ -165,97 +164,113 @@ with st.sidebar:
     scenario = st.selectbox("اختار سيناريو السوق", ["واقعي", "متفائل (+15%)", "متشائم (-15%)"])
     horizon = st.slider("عدد أيام التوقع", 7, 30, 14)
     noise_lvl = st.slider("تقلب السوق", 0.0, 0.1, 0.03)
-    start_date = st.date_input("من تاريخ", df.index.min().date())
-    end_date = st.date_input("إلى تاريخ", df.index.max().date())
+    start_date = st.date_input("من تاريخ", sales_df.index.min().date())
+    end_date = st.date_input("إلى تاريخ", sales_df.index.max().date())
     run_btn = st.button("🚀 تشغيل التوقعات", use_container_width=True)
 
-# ================== Main ==================
-if run_btn:
-    df_filtered = sales_hist[start_date:end_date]
-    
-    scenarios_list = ["واقعي", "متفائل (+15%)", "متشائم (-15%)"]
-    colors = ["#00D4FF", "#00FF88", "#FF4B2B"]
-    
-    fig = go.Figure()
-    
-    # Historical Data
-    fig.add_trace(go.Scatter(
-        x=df_filtered.index,
-        y=df_filtered.values,
-        name="البيانات التاريخية",
-        fill='tozeroy',
-        fillcolor='rgba(150,150,150,0.1)',
-        line=dict(color="rgba(200,200,200,0.5)", width=2),
-        hovertemplate="تاريخ: %{x}<br>المبيعات: %{y:.0f}$<extra></extra>"
-    ))
-    
-    # Moving Average 7 days
-    df_filtered_ma = df_filtered.rolling(7).mean()
-    fig.add_trace(go.Scatter(
-        x=df_filtered_ma.index,
-        y=df_filtered_ma.values,
-        name="متوسط 7 أيام",
-        line=dict(color="orange", width=3, dash='dash')
-    ))
-    
-    forecasts_dict = {}
-    for sc, color in zip(scenarios_list, colors):
-        preds, dates = generate_forecast(df_filtered, horizon, sc, noise_lvl)
-        forecasts_dict[sc] = preds
-        fig.add_trace(go.Scatter(
-            x=dates,
-            y=preds,
-            name=f"توقع ({sc})",
-            mode='lines+markers',
-            line=dict(color=color, width=4, shape='spline'),
-            marker=dict(size=6),
-            hovertemplate="تاريخ: %{x}<br>توقع: %{y:.0f}$<extra></extra>"
+# ================== Tabs ==================
+tabs = st.tabs(["📈 Forecast", "🏆 Top Products Analytics"])
+
+# ================== Tab 1: Forecast ==================
+with tabs[0]:
+    if run_btn:
+        df_filtered = sales_df[start_date:end_date]
+        scenarios_list = ["واقعي", "متفائل (+15%)", "متشائم (-15%)"]
+        colors = ["#00D4FF", "#00FF88", "#FF4B2B"]
+        fig_forecast = go.Figure()
+        fig_forecast.add_trace(go.Scatter(
+            x=df_filtered.index,
+            y=df_filtered.values,
+            name="البيانات التاريخية",
+            fill='tozeroy',
+            fillcolor='rgba(150,150,150,0.1)',
+            line=dict(color="rgba(200,200,200,0.5)", width=2)
         ))
-    
-    fig.update_layout(
-        hovermode="x unified",
+
+        forecasts_dict = {}
+        for sc, color in zip(scenarios_list, colors):
+            preds, dates = generate_forecast(df_filtered, horizon, sc, noise_lvl)
+            forecasts_dict[sc] = preds
+            fig_forecast.add_trace(go.Scatter(
+                x=dates,
+                y=preds,
+                name=f"توقع ({sc})",
+                mode='lines+markers',
+                line=dict(color=color, width=4, shape='spline'),
+                marker=dict(size=6)
+            ))
+
+        fig_forecast.update_layout(
+            title="Forecast for Next Days",
+            hovermode="x unified",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color=text_color,
+            xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
+            yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="المبيعات ($)"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_forecast, use_container_width=True)
+
+        # KPI Cards
+        st.markdown("<br>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        total_forecast = np.mean([forecasts_dict[sc].sum() for sc in scenarios_list])
+        avg_forecast = total_forecast / horizon
+        c1.markdown(f"<div class='metric-box'>إجمالي المبيعات المتوقعة<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-box'>المعدل اليومي المستهدف<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='metric-box'>دقة نموذج التنبؤ AI<br><h2>82%</h2></div>", unsafe_allow_html=True)
+
+        # Download CSV
+        def get_csv_download(forecasts_dict, dates):
+            df_download = pd.DataFrame({"Date": dates})
+            for sc, preds in forecasts_dict.items():
+                df_download[sc] = preds
+            return df_download
+
+        csv_data = get_csv_download(forecasts_dict, dates).to_csv(index=False).encode()
+        st.download_button(
+            label="⬇️ تحميل التوقعات CSV",
+            data=csv_data,
+            file_name="sales_forecast.csv",
+            mime="text/csv"
+        )
+    else:
+        st.info("اضغط على زر تشغيل التوقعات في الشريط الجانبي لعرض Forecast + KPI Cards + Download CSV.")
+
+# ================== Tab 2: Top Products Analytics ==================
+with tabs[1]:
+    top_products = product_df.groupby('Product')['Quantity'].sum().sort_values(ascending=False).head(10)
+    st.subheader("Top 10 Products Bar Chart")
+    fig_bar = go.Figure([go.Bar(
+        x=top_products.index,
+        y=top_products.values,
+        marker_color="#FF4B2B"
+    )])
+    fig_bar.update_layout(
+        xaxis_title="Product",
+        yaxis_title="Total Quantity Sold",
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
+        font_color=text_color
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    st.subheader("Top 5 Products Sales Share Pie Chart")
+    pie_data = product_df.groupby('Product')['Quantity'].sum().sort_values(ascending=False).head(5)
+    fig_pie = go.Figure([go.Pie(
+        labels=pie_data.index,
+        values=pie_data.values,
+        hole=0.4
+    )])
+    fig_pie.update_layout(
         font_color=text_color,
-        margin=dict(l=20, r=20, t=60, b=20),
-        xaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
-        yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.05)', title="المبيعات ($)"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+        paper_bgcolor='rgba(0,0,0,0)',
     )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # KPI Cards
-    st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    total_forecast = np.mean([forecasts_dict[sc].sum() for sc in scenarios_list])
-    avg_forecast = total_forecast / horizon
-    c1.markdown(f"<div class='metric-box'>إجمالي المبيعات المتوقعة<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
-    c2.markdown(f"<div class='metric-box'>المعدل اليومي المستهدف<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
-    c3.markdown(f"<div class='metric-box'>دقة نموذج التنبؤ AI<br><h2>82%</h2></div>", unsafe_allow_html=True)
+    st.plotly_chart(fig_pie, use_container_width=True)
 
-    # ================== Download Button ==================
-    def get_csv_download(forecasts_dict, dates):
-        df_download = pd.DataFrame({"Date": dates})
-        for sc, preds in forecasts_dict.items():
-            df_download[sc] = preds
-        return df_download
-
-    csv_data = get_csv_download(forecasts_dict, dates).to_csv(index=False).encode()
-    st.download_button(
-        label="⬇️ تحميل التوقعات CSV",
-        data=csv_data,
-        file_name="sales_forecast.csv",
-        mime="text/csv"
-    )
-
-else:
-    st.markdown(f"""
-    <div style="background:{card_bg}; padding:50px; border-radius:20px; text-align:center; border:1px solid {border_color};">
-        <h2 style="color:{text_color}; opacity:0.8;">جاهز للتحليل الذكي؟</h2>
-        <p style="color:{text_color}; opacity:0.6;">استخدم الشريط الجانبي لتحديد معايير التوقع وتشغيل الذكاء الاصطناعي</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.subheader("Full Products Table")
+    st.dataframe(product_df.sort_values(by='Quantity', ascending=False).head(20))
 
 # ================== Footer ==================
 st.markdown(f"""
