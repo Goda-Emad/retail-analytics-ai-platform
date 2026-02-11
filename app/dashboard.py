@@ -1,4 +1,4 @@
-# ==================== app.py (Professional Supermarket Background) ====================
+# ==================== app.py (Professional Supermarket + Download + Improved Charts) ====================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,13 +8,13 @@ from catboost import CatBoostRegressor
 import joblib
 import os
 import base64
-import requests
 
 # ================== Paths ==================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(CURRENT_DIR, "catboost_sales_model.pkl")
 FEATURES_PATH = os.path.join(CURRENT_DIR, "feature_names.pkl")
 DATA_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
+BG_PATH = os.path.join(CURRENT_DIR, "supermarket_bg.jpg")  # ضع صورة الخلفية هنا
 
 # ================== Page Setup ==================
 st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
@@ -68,9 +68,9 @@ else:
     card_bg = "rgba(255, 255, 255, 0.5)"
     border_color = "rgba(0, 0, 0, 0.1)"
 
-# ================== Supermarket Glass Background ==================
-BG_URL = "https://images.unsplash.com/photo-1606813909785-4f5f7f8b91c6?auto=format&fit=crop&w=1950&q=80"  # Supermarket background
-bg_base64 = base64.b64encode(requests.get(BG_URL).content).decode()
+# ================== Load Background ==================
+with open(BG_PATH, "rb") as f:
+    bg_base64 = base64.b64encode(f.read()).decode()
 
 st.markdown(f"""
 <style>
@@ -188,6 +188,15 @@ if run_btn:
         hovertemplate="تاريخ: %{x}<br>المبيعات: %{y:.0f}$<extra></extra>"
     ))
     
+    # Moving Average 7 days
+    df_filtered_ma = df_filtered.rolling(7).mean()
+    fig.add_trace(go.Scatter(
+        x=df_filtered_ma.index,
+        y=df_filtered_ma.values,
+        name="متوسط 7 أيام",
+        line=dict(color="orange", width=3, dash='dash')
+    ))
+    
     forecasts_dict = {}
     for sc, color in zip(scenarios_list, colors):
         preds, dates = generate_forecast(df_filtered, horizon, sc, noise_lvl)
@@ -223,6 +232,22 @@ if run_btn:
     c1.markdown(f"<div class='metric-box'>إجمالي المبيعات المتوقعة<br><h2>${total_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
     c2.markdown(f"<div class='metric-box'>المعدل اليومي المستهدف<br><h2>${avg_forecast:,.0f}</h2></div>", unsafe_allow_html=True)
     c3.markdown(f"<div class='metric-box'>دقة نموذج التنبؤ AI<br><h2>82%</h2></div>", unsafe_allow_html=True)
+
+    # ================== Download Button ==================
+    def get_csv_download(forecasts_dict, dates):
+        df_download = pd.DataFrame({"Date": dates})
+        for sc, preds in forecasts_dict.items():
+            df_download[sc] = preds
+        return df_download
+
+    csv_data = get_csv_download(forecasts_dict, dates).to_csv(index=False).encode()
+    st.download_button(
+        label="⬇️ تحميل التوقعات CSV",
+        data=csv_data,
+        file_name="sales_forecast.csv",
+        mime="text/csv"
+    )
+
 else:
     st.markdown(f"""
     <div style="background:{card_bg}; padding:50px; border-radius:20px; text-align:center; border:1px solid {border_color};">
