@@ -1,4 +1,4 @@
-# ==================== app.py (Interactive Dashboard) ====================
+# ==================== app.py (Professional Supermarket Background) ====================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -68,8 +68,8 @@ else:
     card_bg = "rgba(255, 255, 255, 0.5)"
     border_color = "rgba(0, 0, 0, 0.1)"
 
-# ================== Glassmorphic Background ==================
-BG_URL = "https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=1950&q=80"
+# ================== Supermarket Glass Background ==================
+BG_URL = "https://images.unsplash.com/photo-1606813909785-4f5f7f8b91c6?auto=format&fit=crop&w=1950&q=80"  # Supermarket background
 bg_base64 = base64.b64encode(requests.get(BG_URL).content).decode()
 
 st.markdown(f"""
@@ -166,14 +166,12 @@ with st.sidebar:
     noise_lvl = st.slider("تقلب السوق", 0.0, 0.1, 0.03)
     start_date = st.date_input("من تاريخ", df.index.min().date())
     end_date = st.date_input("إلى تاريخ", df.index.max().date())
-    product_filter = st.multiselect("اختر المنتجات", df.columns.drop("Daily_Sales").tolist(), default=[])
     run_btn = st.button("🚀 تشغيل التوقعات", use_container_width=True)
 
 # ================== Main ==================
 if run_btn:
     df_filtered = sales_hist[start_date:end_date]
     
-    # Overlay all scenarios on same chart
     scenarios_list = ["واقعي", "متفائل (+15%)", "متشائم (-15%)"]
     colors = ["#00D4FF", "#00FF88", "#FF4B2B"]
     
