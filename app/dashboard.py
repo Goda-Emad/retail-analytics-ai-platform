@@ -1,4 +1,4 @@
-# ==================== app.py (Professional Supermarket + Download + Improved Charts) ====================
+# ==================== app.py (Supermarket Professional + Online Backgrounds) ====================
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -8,13 +8,13 @@ from catboost import CatBoostRegressor
 import joblib
 import os
 import base64
+import requests
 
 # ================== Paths ==================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(CURRENT_DIR, "catboost_sales_model.pkl")
 FEATURES_PATH = os.path.join(CURRENT_DIR, "feature_names.pkl")
 DATA_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
-BG_PATH = os.path.join(CURRENT_DIR, "supermarket_bg.jpg")  # ضع صورة الخلفية هنا
 
 # ================== Page Setup ==================
 st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
@@ -68,9 +68,10 @@ else:
     card_bg = "rgba(255, 255, 255, 0.5)"
     border_color = "rgba(0, 0, 0, 0.1)"
 
-# ================== Load Background ==================
-with open(BG_PATH, "rb") as f:
-    bg_base64 = base64.b64encode(f.read()).decode()
+# ================== Online Background ==================
+# استخدمنا صورة مناسبة لمشروع سوبرماركت
+BG_URL = "https://images.unsplash.com/photo-1606813903037-7a6d4a1e0324?auto=format&fit=crop&w=1950&q=80"
+bg_base64 = base64.b64encode(requests.get(BG_URL).content).decode()
 
 st.markdown(f"""
 <style>
