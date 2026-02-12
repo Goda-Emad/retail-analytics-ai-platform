@@ -9,7 +9,7 @@ import os
 from utils import run_backtesting
 
 # ================== 0️⃣ Model Version & Config ==================
-MODEL_VERSION = "v3.4"
+MODEL_VERSION = "v3.6 (Safe Scenario Mode)"
 st.set_page_config(page_title=f"Retail AI {MODEL_VERSION}", layout="wide", page_icon="📈")
 
 # ================== 1️⃣ Smart Assets Loader ==================
@@ -42,7 +42,7 @@ def load_assets():
 model, scaler, feature_names, df_raw = load_assets()
 if model is None: st.stop()
 
-# ================== 2️⃣ Logic Functions ==================
+# ================== 2️⃣ Core Functions ==================
 def process_upload(file):
     uploaded_df = pd.read_csv(file)
     uploaded_df.columns = [c.lower().strip() for c in uploaded_df.columns]
@@ -51,70 +51,69 @@ def process_upload(file):
         uploaded_df = uploaded_df.sort_values('date').set_index('date')
     return uploaded_df
 
-def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_std):
+def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_std, scaler, model, feature_names):
     np.random.seed(42)
     preds, lowers, uppers = [], [], []
-    # تنظيف أولي لبيانات الإدخال
+    
+    # تنظيف وتجهيز الداتا الأساسية
     current_df = history_df[['sales']].copy().replace([np.inf, -np.inf], np.nan).fillna(0)
     num_cols = ['lag_1', 'lag_7', 'rolling_mean_7', 'rolling_mean_14']
-    
-    for i in range(horizon):
-        next_date = current_df.index[-1] + timedelta(days=1)
-        
-        # ميزات الأمان لضمان عدم وجود NaN
-        try:
-            lag_1 = float(current_df['sales'].iloc[-1])
-            lag_7 = float(current_df['sales'].iloc[-7] if len(current_df)>=7 else current_df['sales'].mean())
-            roll_7 = float(current_df['sales'].tail(7).mean())
-            roll_14 = float(current_df['sales'].tail(14).mean())
-        except:
-            lag_1 = lag_7 = roll_7 = roll_14 = 0.0
 
+    # 🛑 السيطرة الذكية: مسموح بحد أقصى 3 أضعاف أعلى يوم تاريخي أو 100 ألف
+    MAX_SALES = max(100000, current_df['sales'].max() * 3)
+    SCENARIO_CAP = MAX_SALES * scenario_val
+
+    for i in range(horizon):
+        next_date = current_df.index[-1] + pd.Timedelta(days=1)
+
+        # بناء الميزات
         feat_dict = {
             'dayofweek_sin': np.sin(2*np.pi*next_date.dayofweek/7),
             'dayofweek_cos': np.cos(2*np.pi*next_date.dayofweek/7),
             'month_sin': np.sin(2*np.pi*(next_date.month-1)/12),
             'month_cos': np.cos(2*np.pi*(next_date.month-1)/12),
-            'lag_1': lag_1,
-            'lag_7': lag_7,
-            'rolling_mean_7': roll_7,
-            'rolling_mean_14': roll_14,
+            'lag_1': float(current_df['sales'].iloc[-1]),
+            'lag_7': float(current_df['sales'].iloc[-7] if len(current_df)>=7 else current_df['sales'].mean()),
+            'rolling_mean_7': float(current_df['sales'].tail(7).mean()),
+            'rolling_mean_14': float(current_df['sales'].tail(14).mean()),
             'is_weekend': 1 if next_date.dayofweek >= 5 else 0,
-            'was_closed_yesterday': 1 if lag_1 <= 0 else 0
+            'was_closed_yesterday': 1 if current_df['sales'].iloc[-1] <= 0 else 0
         }
-        
+
         X_df = pd.DataFrame([feat_dict])[feature_names]
-        # 🛡️ الحماية من القيم غير المنتهية قبل الـ Scaler
         X_df = X_df.replace([np.inf, -np.inf], np.nan).fillna(0)
-        
+
+        # Scaling الآمن
         try:
             X_df[num_cols] = scaler.transform(X_df[num_cols])
         except:
             X_df_scaled = scaler.transform(X_df)
             X_df = pd.DataFrame(X_df_scaled, columns=feature_names, index=X_df.index)
-        
-        # التوقع مع معالجة الـ Log
+
+        # التوقع والتحويل من Log
         pred_log = model.predict(X_df)[0]
+        pred_log = np.clip(pred_log, -10, 15)  # حماية من الـ Log المرتفع جداً
+
         pred_val = np.expm1(pred_log) * scenario_val
         pred_val *= (1 + np.random.normal(0, noise_val))
-        
-        # منع القيم الشاذة (Outliers) الناتجة عن الـ expm1
-        pred_val = np.nan_to_num(pred_val, nan=0.0, posinf=current_df['sales'].max()*1.5)
-        pred_val = max(0, float(pred_val))
-        
+
+        # 🛡️ تطبيق الحد النهائي الديناميكي للسيناريو
+        pred_val = np.clip(pred_val, 0, SCENARIO_CAP)
+        pred_val = float(pred_val)
+
+        # نطاق الثقة
         bound = 1.96 * residuals_std * np.sqrt(i + 1)
         preds.append(pred_val)
         lowers.append(max(0, pred_val - bound))
-        uppers.append(pred_val + bound)
-        
+        uppers.append(min(SCENARIO_CAP * 1.2, pred_val + bound))
+
         # تحديث السلسلة لليوم التالي
-        new_row = pd.DataFrame({'sales': [pred_val]}, index=[next_date])
-        current_df = pd.concat([current_df, new_row])
-    
+        current_df.loc[next_date] = [pred_val]
+
     return preds, lowers, uppers, current_df.index[-horizon:]
 
 # ================== 3️⃣ Sidebar UI ==================
-st.sidebar.title(f"🚀 Control Center {MODEL_VERSION}")
+st.sidebar.title(f"🚀 AI Retail Core {MODEL_VERSION}")
 uploaded_file = st.sidebar.file_uploader("📂 Upload CSV", type="csv")
 df_active = process_upload(uploaded_file) if uploaded_file else df_raw.copy()
 
@@ -132,58 +131,58 @@ scenario = st.sidebar.select_slider("Scenario", options=["متشائم", "واق
 scenario_map = {"متشائم": 0.85, "واقعي": 1.0, "متفائل": 1.15}
 noise = st.sidebar.slider("Market Volatility", 0.0, 0.2, 0.05)
 
-# ================== 4️⃣ Processing ==================
+# ================== 4️⃣ Logic Execution ==================
 @st.cache_data
 def cached_backtesting(_df, _features, _scaler, _model):
     return run_backtesting(_df, _features, _scaler, _model)
 
-# تشغيل الـ Backtesting (تأكد أن utils.py محدث أيضاً)
 metrics = cached_backtesting(df_store, feature_names, scaler, model)
 
-# تشغيل التوقع المستقبلي
 start_inf = time.time()
 preds, lowers, uppers, forecast_dates = generate_forecast(
-    df_store, horizon, scenario_map[scenario], noise, metrics['residuals_std']
+    df_store, horizon, scenario_map[scenario], noise, 
+    metrics['residuals_std'], scaler, model, feature_names
 )
 inf_time = time.time() - start_inf
 
-# ================== 5️⃣ Display ==================
-st.title(f"🚀 Retail AI Forecast | {selected_store}")
+# ================== 5️⃣ Main Dashboard UI ==================
+st.title(f"📈 Retail Forecast Dashboard | {selected_store}")
 
+# Metrics Row
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Expected Total Sales", f"${np.sum(preds):,.0f}")
 m2.metric("Model R² Score", f"{metrics['r2']:.3f}")
 m3.metric("Error Rate (MAPE)", f"{metrics['mape']*100:.2f}%")
 m4.metric("Inference Time", f"{inf_time*1000:.1f} ms")
 
-# الرسم البياني التفاعلي
+# Main Chart
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_store.index[-45:], y=df_store['sales'].tail(45), name="Actual", line=dict(color="#94a3b8")))
-fig.add_trace(go.Scatter(x=forecast_dates, y=preds, name="AI Forecast", line=dict(color="#3b82f6", width=4)))
+fig.add_trace(go.Scatter(x=df_store.index[-60:], y=df_store['sales'].tail(60), name="Actual History", line=dict(color="#94a3b8")))
+fig.add_trace(go.Scatter(x=forecast_dates, y=preds, name="AI Safe Forecast", line=dict(color="#3b82f6", width=4)))
 fig.add_trace(go.Scatter(
     x=np.concatenate([forecast_dates, forecast_dates[::-1]]),
     y=np.concatenate([uppers, lowers[::-1]]),
-    fill='toself', fillcolor='rgba(59,130,246,0.15)', line=dict(color='rgba(255,255,255,0)'), name="95% Confidence"
+    fill='toself', fillcolor='rgba(59,130,246,0.15)', line=dict(color='rgba(255,255,255,0)'), name="Confidence Interval"
 ))
-fig.update_layout(template="plotly_dark", hovermode="x unified", height=500)
+fig.update_layout(template="plotly_dark", hovermode="x unified", height=500, margin=dict(l=20,r=20,t=20,b=20))
 st.plotly_chart(fig, use_container_width=True)
 
-# الجزء السفلي: الميزات والتحميل
+# Insights Row
 col_a, col_b = st.columns(2)
 with col_a:
     st.subheader("🎯 Feature Significance")
     importance = model.get_feature_importance()
     fig_imp = go.Figure(go.Bar(x=importance, y=feature_names, orientation='h', marker=dict(color='#3b82f6')))
-    fig_imp.update_layout(template="plotly_dark", height=300)
+    fig_imp.update_layout(template="plotly_dark", height=300, margin=dict(l=20,r=20,t=40,b=20))
     st.plotly_chart(fig_imp, use_container_width=True)
 
 with col_b:
-    st.subheader("📥 Export Results")
-    res_df = pd.DataFrame({"Date": forecast_dates, "Forecast": preds, "Min_Bound": lowers, "Max_Bound": uppers})
+    st.subheader("📥 Export Preview")
+    res_df = pd.DataFrame({"Date": forecast_dates, "Forecast": preds, "Min": lowers, "Max": uppers})
     st.dataframe(res_df.head(10), use_container_width=True)
-    st.download_button("Download Full CSV", res_df.to_csv(index=False), f"forecast_{selected_store}.csv")
+    st.download_button("Download CSV Report", res_df.to_csv(index=False), f"forecast_{selected_store}.csv")
 
-with st.expander("📝 Diagnostics & System Logs"):
-    st.write(f"**Version:** {MODEL_VERSION}")
-    st.write(f"**Backtesting Records:** {metrics['data_points']}")
-    st.write(f"**Features:** {', '.join(feature_names)}")
+with st.expander("📝 System Diagnostics"):
+    st.write(f"**Safe Mode Status:** Active (Scenario Capped)")
+    st.write(f"**Backtesting Samples:** {metrics['data_points']}")
+    st.write(f"**Residual Std Dev:** {metrics['residuals_std']:.2f}")
