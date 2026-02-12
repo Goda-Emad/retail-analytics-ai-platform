@@ -5,28 +5,48 @@ import plotly.graph_objects as go
 from datetime import timedelta
 import joblib
 import time
+import os
 from utils import run_backtesting
 
 # ================== 0️⃣ Model Version ==================
-MODEL_VERSION = "v3.2.1"  # تحديث طفيف للاستقرار
+MODEL_VERSION = "v3.2.1"
 st.set_page_config(page_title=f"Retail AI {MODEL_VERSION}", layout="wide", page_icon="📈")
 
 # ================== 1️⃣ تحميل الأصول ==================
 @st.cache_resource
 def load_assets():
-    model = joblib.load("catboost_sales_model_10features.pkl")
-    scaler = joblib.load("scaler_10features.pkl")
-    features = joblib.load("feature_names_10features.pkl")
-    df = pd.read_parquet("daily_sales_ready_10features.parquet")
-    df.columns = [c.lower().strip() for c in df.columns]
-    if 'date' in df.columns:
-        df['date'] = pd.to_datetime(df['date'])
-        df = df.sort_values('date').set_index('date')
-    return model, scaler, features, df
+    try:
+        CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+        model_path = os.path.join(CURRENT_DIR, "catboost_sales_model_10features.pkl")
+        scaler_path = os.path.join(CURRENT_DIR, "scaler_10features.pkl")
+        features_path = os.path.join(CURRENT_DIR, "feature_names_10features.pkl")
+        data_path = os.path.join(CURRENT_DIR, "daily_sales_ready_10features.parquet")
+
+        # تحقق من وجود الملفات
+        for p in [model_path, scaler_path, features_path, data_path]:
+            if not os.path.exists(p):
+                raise FileNotFoundError(f"❌ الملف غير موجود: {p}")
+
+        model = joblib.load(model_path)
+        scaler = joblib.load(scaler_path)
+        features = joblib.load(features_path)
+        df = pd.read_parquet(data_path)
+
+        df.columns = [c.lower().strip() for c in df.columns]
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date').set_index('date')
+
+        return model, scaler, features, df
+
+    except Exception as e:
+        st.error(f"❌ خطأ في تحميل الأصول: {e}")
+        return None, None, None, None
 
 model, scaler, feature_names, df_raw = load_assets()
 
-# ================== 2️⃣ معالجة Upload CSV ==================
+# ================== 2️⃣ Upload CSV ==================
 def process_upload(file):
     uploaded_df = pd.read_csv(file)
     uploaded_df.columns = [c.lower().strip() for c in uploaded_df.columns]
@@ -62,16 +82,16 @@ def cached_backtesting(_df, _features, _scaler, _model):
 
 metrics = cached_backtesting(df_store, feature_names, scaler, model)
 
-# ================== 5️⃣ Forecast Engine (المعدل) ==================
+# ================== 5️⃣ Forecast Engine ==================
 def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_std):
     np.random.seed(42)
     preds, lowers, uppers = [], [], []
     current_df = history_df[['sales']].copy()
     num_cols = ['lag_1', 'lag_7', 'rolling_mean_7', 'rolling_mean_14']
-    
+
     for i in range(horizon):
         next_date = current_df.index[-1] + timedelta(days=1)
-        
+
         # ميزات التاريخ
         feat_dict = {
             'dayofweek_sin': np.sin(2*np.pi*next_date.dayofweek/7),
@@ -85,33 +105,35 @@ def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_st
             'is_weekend': 1 if next_date.dayofweek >= 5 else 0,
             'was_closed_yesterday': 1 if current_df['sales'].iloc[-1] == 0 else 0
         }
-        
-        # التحويل والترتيب الصحيح (مهم جداً للـ Scaler)
+
+        # ترتيب الأعمدة بالملي زي ما الموديل متوقع
         X_df = pd.DataFrame([feat_dict])[feature_names]
         X_df[num_cols] = scaler.transform(X_df[num_cols])
-        
-        # التوقع (Log space -> Normal space)
+
+        # التوقع
         pred_log = model.predict(X_df)[0]
         pred_val = np.expm1(pred_log) * scenario_val
         pred_val *= (1 + np.random.normal(0, noise_val))
-        pred_val = max(0, pred_val) # منع القيم السالبة
-        
-        # نطاق الثقة (95%)
+        pred_val = max(0, pred_val)  # منع القيم السالبة
+
+        # نطاق الثقة 95%
         bound = 1.96 * residuals_std * np.sqrt(i + 1)
-        
+
         preds.append(pred_val)
         lowers.append(max(0, pred_val - bound))
         uppers.append(pred_val + bound)
-        
-        # تحديث الـ DataFrame لليوم التالي
+
+        # تحديث البيانات لليوم التالي
         new_row = pd.DataFrame({'sales': [pred_val]}, index=[next_date])
         current_df = pd.concat([current_df, new_row])
-    
+
     return preds, lowers, uppers, current_df.index[-horizon:]
 
-# ================== 6️⃣ Execution ==================
+# ================== 6️⃣ Execute Forecast ==================
 start_inf = time.time()
-preds, lowers, uppers, forecast_dates = generate_forecast(df_store, horizon, scenario_map[scenario], noise, metrics['residuals_std'])
+preds, lowers, uppers, forecast_dates = generate_forecast(
+    df_store, horizon, scenario_map[scenario], noise, metrics['residuals_std']
+)
 inf_time = time.time() - start_inf
 
 # ================== 7️⃣ Visualization & KPIs ==================
@@ -125,8 +147,10 @@ c4.metric("Inference Time", f"{inf_time*1000:.1f} ms")
 
 # الرسم البياني
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_store.index[-45:], y=df_store['sales'].tail(45), name="Actual Sales", line=dict(color="#94a3b8")))
-fig.add_trace(go.Scatter(x=forecast_dates, y=preds, name="AI Prediction", line=dict(color="#3b82f6", width=4)))
+fig.add_trace(go.Scatter(x=df_store.index[-45:], y=df_store['sales'].tail(45),
+                         name="Actual Sales", line=dict(color="#94a3b8")))
+fig.add_trace(go.Scatter(x=forecast_dates, y=preds,
+                         name="AI Prediction", line=dict(color="#3b82f6", width=4)))
 fig.add_trace(go.Scatter(
     x=np.concatenate([forecast_dates, forecast_dates[::-1]]),
     y=np.concatenate([uppers, lowers[::-1]]),
@@ -142,15 +166,18 @@ col_a, col_b = st.columns(2)
 
 with col_a:
     importance = model.get_feature_importance()
-    fig_imp = go.Figure(go.Bar(x=importance, y=feature_names, orientation='h', marker=dict(color='#3b82f6')))
+    fig_imp = go.Figure(go.Bar(x=importance, y=feature_names, orientation='h',
+                               marker=dict(color='#3b82f6')))
     fig_imp.update_layout(template="plotly_dark", title="Feature Importance", height=300)
     st.plotly_chart(fig_imp, use_container_width=True)
 
 with col_b:
-    res_df = pd.DataFrame({"Date": forecast_dates, "Forecast": preds, "Min_Expected": lowers, "Max_Expected": uppers})
+    res_df = pd.DataFrame({"Date": forecast_dates, "Forecast": preds,
+                           "Min_Expected": lowers, "Max_Expected": uppers})
     st.write("📊 تقرير التوقعات القادم:")
     st.dataframe(res_df.head(), use_container_width=True)
-    st.download_button("📥 Download Full CSV", res_df.to_csv(index=False), f"forecast_{selected_store}.csv")
+    st.download_button("📥 Download Full CSV", res_df.to_csv(index=False),
+                       f"forecast_{selected_store}.csv")
 
 with st.expander("📝 System Diagnostics"):
     st.write(f"**Execution Log:** {time.strftime('%Y-%m-%d %H:%M:%S')}")
