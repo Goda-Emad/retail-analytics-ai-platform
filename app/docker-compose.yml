@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  # خدمة المحرك (الـ API)
+  api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+
+  # خدمة الواجهة (الـ Dashboard)
+  dashboard:
+    build: .
+    command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    depends_on:
+      - api
