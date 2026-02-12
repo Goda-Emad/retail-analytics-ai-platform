@@ -3,10 +3,15 @@ import numpy as np
 import streamlit as st
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_absolute_percentage_error, r2_score, mean_squared_error
+import time
 
-# إضافة Cache عشان ما يتحسبش كل شوية
 @st.cache_data(show_spinner=False)
 def run_backtesting(_df, feature_names, _scaler, _model):
+    """
+    1️⃣ Cache للـ Backtesting: يتم الحساب مرة واحدة فقط لتحسين الأداء
+    9️⃣ Logging: حساب زمن التنفيذ وعدد السجلات
+    """
+    start_time = time.time()
     tscv = TimeSeriesSplit(n_splits=3)
     results = []
     all_residuals = []
@@ -16,7 +21,7 @@ def run_backtesting(_df, feature_names, _scaler, _model):
         test_df = _df.iloc[test_index]
         X_test = test_df[feature_names].copy()
         
-        # الترتيب الصحيح قبل الـ Scaling
+        # التأكد من الترتيب والـ Scaling
         X_test = X_test[feature_names]
         X_test[num_cols] = _scaler.transform(X_test[num_cols])
         
@@ -24,7 +29,6 @@ def run_backtesting(_df, feature_names, _scaler, _model):
         preds = np.expm1(preds_log)
         actuals = test_df['sales']
         
-        # حساب الـ Residuals (الأخطاء) لنطاق الثقة
         residuals = actuals - preds
         all_residuals.extend(residuals)
         
@@ -35,5 +39,9 @@ def run_backtesting(_df, feature_names, _scaler, _model):
         })
     
     metrics_avg = pd.DataFrame(results).mean().to_dict()
-    metrics_avg['residuals_std'] = np.std(all_residuals) # الـ STD الحقيقي للأخطاء
+    metrics_avg['residuals_std'] = np.std(all_residuals)
+    metrics_avg['execution_time'] = time.time() - start_time
+    metrics_avg['data_points'] = len(_df)
+    metrics_avg['features_count'] = len(feature_names)
+    
     return metrics_avg
