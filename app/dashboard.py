@@ -8,7 +8,6 @@ import numpy as np
 import joblib
 import os
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
 
 # ================== Paths ==================
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,6 +17,10 @@ SCALER_PATH = os.path.join(CURRENT_DIR, "scaler.pkl")
 FEATURES_PATH = os.path.join(CURRENT_DIR, "feature_names.pkl")
 FORECAST_PATH = os.path.join(CURRENT_DIR, "Sales_Forecast_Feb_March_2026.xlsx")
 PRODUCT_ANALYTICS_PATH = os.path.join(CURRENT_DIR, "product_analytics.parquet")
+DAILY_SALES_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready.parquet")
+FORECAST_RESULTS_PATH = os.path.join(CURRENT_DIR, "forecast_results.parquet")
+FEATURE_IMPORTANCE_PATH = os.path.join(CURRENT_DIR, "feature_importance.pkl")
+MODEL_METRICS_PATH = os.path.join(CURRENT_DIR, "model_metrics.pkl")
 
 # ================== Load Assets ==================
 model = joblib.load(MODEL_PATH)
@@ -25,9 +28,12 @@ scaler = joblib.load(SCALER_PATH)
 feature_order = joblib.load(FEATURES_PATH)
 
 # Load historical & forecast data
-daily_sales = pd.read_parquet(os.path.join(CURRENT_DIR, "daily_sales_ready.parquet"))
+daily_sales = pd.read_parquet(DAILY_SALES_PATH)
 forecast_df = pd.read_excel(FORECAST_PATH)
 product_analytics = pd.read_parquet(PRODUCT_ANALYTICS_PATH)
+forecast_results = pd.read_parquet(FORECAST_RESULTS_PATH)
+feature_importance = joblib.load(FEATURE_IMPORTANCE_PATH)
+model_metrics = joblib.load(MODEL_METRICS_PATH)
 
 # ================== Streamlit Page Setup ==================
 st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
@@ -42,13 +48,19 @@ tab1, tab2, tab3 = st.tabs(["Historical vs Forecast", "Product Analytics", "Metr
 with tab1:
     st.subheader("Actual Sales vs Forecasted Sales")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=daily_sales['date'], y=daily_sales['sales'],
-                             mode='lines', name='Actual', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=forecast_df['Date'], y=forecast_df['Predicted_Sales'],
-                             mode='lines', name='Forecast', line=dict(color='orange')))
-    fig.update_layout(title="Forecast vs Actual Sales",
-                      xaxis_title="Date", yaxis_title="Sales",
-                      template="plotly_white")
+    fig.add_trace(go.Scatter(
+        x=daily_sales['date'], y=daily_sales['sales'],
+        mode='lines', name='Actual', line=dict(color='blue')
+    ))
+    fig.add_trace(go.Scatter(
+        x=forecast_df['Date'], y=forecast_df['Predicted_Sales'],
+        mode='lines', name='Forecast', line=dict(color='orange')
+    ))
+    fig.update_layout(
+        title="Forecast vs Actual Sales",
+        xaxis_title="Date", yaxis_title="Sales",
+        template="plotly_white"
+    )
     st.plotly_chart(fig, use_container_width=True)
 
 # ================== Tab 2: Product Analytics ==================
@@ -63,7 +75,7 @@ with tab3:
     ✅ Model: CatBoost Regressor
     ✅ Total Historical Days: {len(daily_sales)}
     ✅ Forecast Horizon: {forecast_df['Date'].min().date()} to {forecast_df['Date'].max().date()}
-    ✅ Stable WMAPE (Historical Folds Average): 47.87%
+    ✅ Stable WMAPE (Historical Folds Average): {model_metrics.get('wmape', 'N/A')}%
     
     🔹 Key Features (SHAP Analysis):
       - rolling_mean_14
