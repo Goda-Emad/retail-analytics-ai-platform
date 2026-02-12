@@ -1,90 +1,87 @@
+# ========================= Imports =========================
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
-import os
-import plotly.graph_objects as go
 import plotly.express as px
+from catboost import CatBoostRegressor
+import os
 
-# ================== Page Config ==================
 st.set_page_config(page_title="Retail AI Pro | Eng. Goda Emad", layout="wide")
 
-st.title("🛒 Retail AI Sales Forecast Dashboard")
-st.markdown("### Powered by CatBoost & Advanced Feature Engineering")
+# ========================= Paths =========================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# ================== Paths ==================
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "daily_sales_ready_10features.parquet")
+MODEL_PATH = os.path.join(BASE_DIR, "catboost_sales_model_10features.pkl")
+FEATURES_PATH = os.path.join(BASE_DIR, "feature_names_10features.pkl")
+IMPORTANCE_PATH = os.path.join(BASE_DIR, "feature_importance_10features.pkl")
 
-DAILY_SALES_PATH = os.path.join(CURRENT_DIR, "daily_sales_ready_10features.parquet")
-FORECAST_PATH = os.path.join(CURRENT_DIR, "forecast_results.parquet")
-METRICS_PATH = os.path.join(CURRENT_DIR, "model_metrics.pkl")
-IMPORTANCE_PATH = os.path.join(CURRENT_DIR, "feature_importance_10features.pkl")
-PRODUCT_PATH = os.path.join(CURRENT_DIR, "product_analytics.parquet")
+# ========================= Load Files =========================
+@st.cache_data
+def load_data():
+    df = pd.read_parquet(DATA_PATH)
+    return df
 
-# ================== Load Data ==================
-daily_sales = pd.read_parquet(DAILY_SALES_PATH)
-forecast_df = pd.read_parquet(FORECAST_PATH)
-metrics = joblib.load(METRICS_PATH)
-importance_df = joblib.load(IMPORTANCE_PATH)
-product_df = pd.read_parquet(PRODUCT_PATH)
+@st.cache_resource
+def load_model():
+    return joblib.load(MODEL_PATH)
 
-# ================== Sales vs Forecast ==================
-st.subheader("📈 Actual Sales vs Forecast")
+@st.cache_data
+def load_features():
+    return joblib.load(FEATURES_PATH)
 
-fig = go.Figure()
+@st.cache_data
+def load_importance():
+    return joblib.load(IMPORTANCE_PATH)
 
-fig.add_trace(go.Scatter(
-    x=daily_sales['date'],
-    y=daily_sales['sales'],
-    mode='lines',
-    name='Actual Sales'
-))
+daily_sales = load_data()
+model = load_model()
+feature_names = load_features()
+importance_df = load_importance()
 
-fig.add_trace(go.Scatter(
-    x=forecast_df['date'],
-    y=forecast_df['forecast'],
-    mode='lines',
-    name='Forecast'
-))
+# ========================= Title =========================
+st.title("📊 Retail Sales Forecast Dashboard")
+st.subheader("Built by Eng. Goda Emad")
 
+# ========================= Sales Chart =========================
+st.header("📈 Historical Sales")
+
+daily_sales['date'] = pd.to_datetime(daily_sales['date'])
+fig = px.line(daily_sales, x='date', y='sales', title="Daily Sales Over Time")
 st.plotly_chart(fig, use_container_width=True)
 
-# ================== Model Metrics ==================
-st.subheader("📊 Model Performance")
+# ========================= Prepare Features =========================
+X = daily_sales[feature_names].copy()
+y_pred = model.predict(X)
 
-col1, col2, col3 = st.columns(3)
+daily_sales['prediction'] = y_pred
 
-col1.metric("MAE", f"{metrics['MAE']:.2f}")
-col2.metric("RMSE", f"{metrics['RMSE']:.2f}")
-col3.metric("R² Score", f"{metrics['R2']:.4f}")
+# ========================= Prediction Chart =========================
+st.header("🔮 Model Predictions vs Actual")
 
-# ================== Feature Importance ==================
-st.subheader("🔑 Feature Importance")
+fig2 = px.line(daily_sales, x='date', y=['sales', 'prediction'],
+               title="Actual vs Predicted Sales")
+st.plotly_chart(fig2, use_container_width=True)
 
-importance_df = importance_df.sort_values("Importance", ascending=True)
+# ========================= Feature Importance =========================
+st.header("⭐ Feature Importance (Top Drivers)")
 
-fig_imp = px.bar(
+importance_df = importance_df.sort_values(by="Importance", ascending=False)
+
+fig3 = px.bar(
     importance_df,
     x="Importance",
     y="Feature",
-    orientation="h",
-    text="Importance"
+    orientation='h',
+    title="Feature Importance from CatBoost"
 )
+st.plotly_chart(fig3, use_container_width=True)
 
-st.plotly_chart(fig_imp, use_container_width=True)
+# ========================= Metrics =========================
+st.header("📌 Dataset Info")
 
-# ================== Product Analytics ==================
-st.subheader("📦 Product Analytics")
-
-top_products = product_df.sort_values("total_sales", ascending=False).head(10)
-
-fig_prod = px.bar(
-    top_products,
-    x="total_sales",
-    y="product",
-    orientation="h",
-    text="total_sales"
-)
-
-st.plotly_chart(fig_prod, use_container_width=True)
-
-st.dataframe(top_products)
+col1, col2, col3 = st.columns(3)
+col1.metric("Rows", len(daily_sales))
+col2.metric("Start Date", str(daily_sales['date'].min().date()))
+col3.metric("End Date", str(daily_sales['date'].max().date()))
