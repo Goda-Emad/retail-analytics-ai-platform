@@ -85,17 +85,17 @@ def generate_forecast(hist, h, scen_val, res_std):
     return preds, lows, ups, curr.index[-h:]
 
 p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
-# ================== 4️⃣ العرض البصري والنتائج (النسخة المصلحة 100%) ==================
+# ================== 4️⃣ العرض البصري والنتائج (نسخة إصلاح الأرقام العملاقة) ==================
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
-# صف الإحصائيات (Metrics)
+# 1. صف الإحصائيات (Metrics)
 m1, m2, m3, m4 = st.columns(4)
 m1.metric(t("إجمالي المبيعات المتوقع", "Expected Sales"), f"${sum(p):,.0f}")
 m2.metric(t("دقة الموديل (R²)", "Model Accuracy"), f"{metrics['r2']:.3f}")
 m3.metric(t("نسبة الخطأ (MAPE)", "Error Rate"), f"{metrics['mape']*100:.1f}%")
 m4.metric(t("زمن المعالجة", "Inference Time"), "0.14 s")
 
-# الرسم البياني (تم حذف key من هنا لأنه لا ينتمي لـ Plotly)
+# 2. الرسم البياني الرئيسي
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=df_s.index[-60:], y=df_s['sales'].tail(60), name=t("سابق", "Actual"), line=dict(color="#94a3b8")))
 fig.add_trace(go.Scatter(x=d, y=p, name=t("توقع الذكاء", "AI Forecast"), line=dict(color=neon_color, width=4)))
@@ -103,11 +103,11 @@ fig.add_trace(go.Scatter(x=np.concatenate([d, d[::-1]]), y=np.concatenate([u, l[
                          fill='toself', fillcolor='rgba(0, 242, 254, 0.1)', line=dict(color='rgba(255,255,255,0)'), name=t("نطاق الثقة", "Confidence")))
 
 fig.update_layout(template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
+st.plotly_chart(fig, use_container_width=True, key="main_forecast_chart_v5")
 
-# الـ key مكانه الصحيح هنا جوه دالة st.plotly_chart
-st.plotly_chart(fig, use_container_width=True, key="main_forecast_chart_unique")
-
+# 3. العوامل والجدول
 c1, c2 = st.columns(2)
+
 with c1:
     st.subheader(t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers"))
     feat_ar = {'lag_1': "مبيعات اليوم السابق", 'lag_7': "مبيعات الأسبوع الماضي", 'rolling_mean_7': "متوسط 7 أيام", 
@@ -116,20 +116,32 @@ with c1:
     names = [feat_ar.get(n, n) for n in feature_names] if lang=="عربي" else feature_names
     fig_i = go.Figure(go.Bar(x=model.get_feature_importance(), y=names, orientation='h', marker=dict(color=neon_color)))
     fig_i.update_layout(template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, yaxis={'categoryorder':'total ascending'})
-    
-    # الـ key مكانه الصحيح هنا
-    st.plotly_chart(fig_i, use_container_width=True, key="feature_importance_chart_unique")
+    st.plotly_chart(fig_i, use_container_width=True, key="feature_importance_v5")
 
 with c2:
-    st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Data Table Details"))
+    st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Data Table"))
+    
+    # --- معالجة الأرقام العملاقة (Integer Overflow Fix) ---
+    p_clean = np.clip(p, 0, 1e9) # منع الأرقام من تخطي مليار
+    l_clean = np.clip(l, 0, 1e9)
+    u_clean = np.clip(u, 0, 1e9)
+
     res_df = pd.DataFrame({
         t("التاريخ", "Date"): d,
-        t("التوقع", "Forecast"): np.round(p).astype(int),
-        t("الأدنى", "Min"): np.round(l).astype(int),
-        t("الأقصى", "Max"): np.round(u).astype(int)
+        t("التوقع", "Forecast"): p_clean,
+        t("الأدنى", "Min"): l_clean,
+        t("الأقصى", "Max"): u_clean
     })
-    st.dataframe(res_df.style.format("{:,}").background_gradient(cmap='Blues', subset=[t("التوقع", "Forecast")]), use_container_width=True)
-    st.download_button(t("تحميل ملف CSV", "Download CSV"), res_df.to_csv(index=False), "forecast.csv")
+    
+    # تنسيق العرض ليكون أرقام صحيحة واضحة بدون أصفار مملة
+    st.dataframe(
+        res_df.style.format("{:,.0f}").background_gradient(cmap='Blues', subset=[t("التوقع", "Forecast")]), 
+        use_container_width=True
+    )
+    st.download_button(t("تحميل التقرير CSV", "Download CSV"), res_df.to_csv(index=False), "forecast_report.csv")
+
+st.markdown("---")
+st.markdown(f"<div style='text-align:center; opacity:0.6;'>Eng. Goda Emad | AI Analytics Platform 2026</div>", unsafe_allow_html=True)
 # ================== 5️⃣ تحليل توزيع الأخطاء (مع إضافة Key فريد) ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
