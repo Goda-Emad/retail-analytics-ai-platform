@@ -409,58 +409,105 @@ with col_err2:
     )
 
     st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
-    # ================== 6️⃣ مقارنة السيناريوهات ==================
+    # ================== 6️⃣ Scenario Comparison (Final Production) ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
 
-# توليد التوقعات لكل سيناريو مع حماية القيم
-p_optimistic, _, _, _ = generate_forecast(df_s, horizon, scen_map["متفائل"], metrics['residuals_std'])
-p_realistic, _, _, _ = generate_forecast(df_s, horizon, scen_map["واقعي"], metrics['residuals_std'])
-p_pessimistic, _, _, _ = generate_forecast(df_s, horizon, scen_map["متشائم"], metrics['residuals_std'])
+# ⏳ Spinner لتحسين تجربة المستخدم أثناء الحساب
+with st.spinner(t("⏳ جاري حساب السيناريوهات المستقبلية...",
+                  "⏳ Computing future forecast scenarios...")):
 
-# تحويل NaN إلى صفر وحماية القيم
-p_optimistic = np.nan_to_num(p_optimistic)
-p_realistic = np.nan_to_num(p_realistic)
-p_pessimistic = np.nan_to_num(p_pessimistic)
+    p_optimistic, _, _, _ = generate_forecast(
+        df_s,
+        horizon,
+        scen_map["متفائل"],
+        metrics['residuals_std'],
+        use_guardrail=True
+    )
 
-# رسم المخطط
+    p_realistic, _, _, _ = generate_forecast(
+        df_s,
+        horizon,
+        scen_map["واقعي"],
+        metrics['residuals_std'],
+        use_guardrail=True
+    )
+
+    p_pessimistic, _, _, _ = generate_forecast(
+        df_s,
+        horizon,
+        scen_map["متشائم"],
+        metrics['residuals_std'],
+        use_guardrail=True
+    )
+
+# 🧼 تنظيف القيم النهائية
+def sanitize(arr):
+    arr = np.nan_to_num(arr)
+    return np.maximum(arr, 0)
+
+p_optimistic = sanitize(p_optimistic)
+p_realistic = sanitize(p_realistic)
+p_pessimistic = sanitize(p_pessimistic)
+
+# 📈 بناء الرسم البياني
 fig_scen = go.Figure()
 
 fig_scen.add_trace(go.Scatter(
     x=d,
     y=p_optimistic,
-    name=t("متفائل", "Optimistic"),
-    line=dict(color='#00ff88', width=3, dash='dot')
+    name=t("🚀 متفائل (نمو قوي)", "Optimistic (High Growth)"),
+    line=dict(color='#00ff88', width=3, dash='dot'),
+    hovertemplate='%{y:,.0f}'
 ))
 
 fig_scen.add_trace(go.Scatter(
     x=d,
     y=p_realistic,
-    name=t("واقعي", "Realistic"),
-    line=dict(color=NEON_COLOR, width=4)
+    name=t("🎯 واقعي (توقع AI)", "Realistic (AI Forecast)"),
+    line=dict(color=NEON_COLOR, width=4),
+    hovertemplate='%{y:,.0f}'
 ))
 
 fig_scen.add_trace(go.Scatter(
     x=d,
     y=p_pessimistic,
-    name=t("متشائم", "Pessimistic"),
-    line=dict(color='#ff4b4b', width=3, dash='dot')
+    name=t("⚠️ متشائم (محافظ)", "Pessimistic (Conservative)"),
+    line=dict(color='#ff4b4b', width=3, dash='dot'),
+    hovertemplate='%{y:,.0f}'
 ))
 
 fig_scen.update_layout(
-    title=t("📊 مقارنة السيناريوهات الثلاثة للتوقعات", "📊 Forecast Scenario Comparison"),
+    title=t("📊 تحليل السيناريوهات المستقبلية", "📊 Future Scenario Analysis"),
     xaxis_title=t("التاريخ", "Date"),
     yaxis_title=t("المبيعات المتوقعة", "Expected Sales"),
     template=CHART_TEMPLATE,
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(0,0,0,0)',
     hovermode="x unified",
-    margin=dict(l=20, r=20, t=40, b=20),
-    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+    margin=dict(l=20, r=20, t=60, b=20),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1,
+        bgcolor="rgba(0,0,0,0)"
+    )
 )
 
-# عرض المخطط في Streamlit مع key فريد لمنع التكرار
-st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_comparison_chart")
+st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_comparison_final")
+
+# 🛠️ ملاحظة تقنية للمستخدم
+with st.expander(t("🛠️ كيف يضمن النظام واقعية التوقعات؟",
+                   "🛠️ How forecasts remain realistic?")):
+    st.write(t(
+        "يستخدم النظام طبقة Guardrail إحصائية داخل خوارزمية التنبؤ تمنع النمو غير المنطقي "
+        "اعتمادًا على تذبذب البيانات التاريخية.",
+        "The system applies a statistical Guardrail layer inside the forecasting loop "
+        "to prevent unrealistic growth based on historical volatility."
+    ))
+
 # ================== 7️⃣ المساعد الذكي والروابط المهنية (AI Insights & Action Plan) ==================
 
 st.divider()
