@@ -499,74 +499,62 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant - Final PRO Edition) ==================
+# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
+# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI
 if 'p' in locals() and len(p) > 0:
-    # --- 1. تحليل البيانات الرقمية اللحظية ---
+    # تجهيز بعض الأرقام للـ AI
     total_sales_val = np.sum(p)
-    peak_val = np.max(p)
-    peak_date = d[np.argmax(p)]
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    days_ar = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
-    days_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    day_name = days_ar[peak_date.dayofweek] if lang == "عربي" else days_en[peak_date.dayofweek]
-
-    # --- 2. عرض كروت المؤشرات ---
-    c1, c2, c3 = st.columns(3)
-    with c1: st.metric(t("إجمالي مبيعات الفترة", "Total Period Sales"), f"${total_sales_val:,.0f}")
-    with c2: st.metric(t("يوم الذروة", "Peak Sales Day"), day_name)
-    with c3: st.metric(t("اتجاه النمو", "Growth Trend"), f"{growth_val:+.1f}%")
+    # 1. كروت البيانات السريعة
+    c1, c2 = st.columns(2)
+    with c1: st.metric(t("إجمالي المتوقع", "Total Forecast"), f"${total_sales_val:,.0f}")
+    with c2: st.metric(t("نمو المبيعات", "Sales Growth"), f"{growth_val:+.1f}%")
 
     st.markdown("---")
 
-    # --- 3. محرك Gemini الاحترافي ---
-    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_pro"):
+    # 2. زر استدعاء Gemini (النسخة الاحترافية)
+    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
             
+            # البرومت (الرسالة المرسلة لـ Gemini)
             prompt = f"""
-            Act as a world-class Retail Strategy Consultant.
-            Context: Store {selected_store}, {horizon} days forecast, ${total_sales_val:,.0f} revenue, {scen} scenario.
-            Task: Provide 3 short executive insights for (Inventory, Marketing, Staffing).
-            Language: {lang}.
+            Act as a retail expert. 
+            Analyze: Store {selected_store}, Forecast ${total_sales_val:,.0f}, Growth {growth_val:+.1f}%. 
+            Provide 3 short business tips in {lang}.
             """
 
-            # قائمة الموديلات المحدثة لعام 2026
-            models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
-            success = False
-            error_log = "" # لتخزين الخطأ لو حدث
-            
-            for model_name in models_to_try:
-                try:
-                    m = genai.GenerativeModel(model_name)
-                    response = m.generate_content(prompt)
-                    
-                    st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
-                    st.info(response.text)
-                    st.success(f"✔️ {t('تم التحليل بنجاح', 'Analysis successful')}")
-                    success = True
-                    break 
-                except Exception as e:
-                    error_log = str(e) # سجل آخر خطأ حصل
-                    continue
-            
-            if not success:
-                st.error(t("❌ فشل الاتصال بخوادم Google AI.", "❌ Failed to connect to Google AI."))
-                # الزيادة المهمة هنا: عرض الخطأ الحقيقي للمهندس جودة
-                with st.expander("🛠️ تشخيص العطل التقني (Technical Diagnostic)"):
-                    st.warning("هذا الخطأ يظهر لك فقط كمطور لحل المشكلة:")
-                    st.code(error_log)
+            try:
+                # القوة هنا: استخدام transport='rest' بيخلي الاتصال ينجح على سيرفرات Cloud
+                response = gemini_model.generate_content(
+                    prompt,
+                    transport='rest' 
+                )
+                
+                st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
+                st.info(response.text)
+                st.success("✔️ Connected Successfully via REST Protocol")
+                
+            except Exception as e:
+                st.error(t("❌ فشل الاتصال بخوادم Google AI.", "❌ Connection Failed."))
+                # لو لسه فيه مشكلة، الصندوق ده هيقولنا "ليه" بالظبط
+                with st.expander("🛠️ تشخيص العطل التقني (Diagnostic Log)"):
+                    st.code(str(e))
 
 # ================== 🔗 الروابط المهنية (ENG.GODA EMAD Edition) ==================
 st.write("---")
-col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
-with col_f1:
-    st.markdown(t(f"👨‍💻 تم التطوير بواسطة: **ENG.GODA EMAD**", f"👨‍💻 Developed by: **ENG.GODA EMAD**"))
-with col_f2:
+col_footer_1, col_footer_2, col_footer_3 = st.columns([2, 1, 1])
+
+with col_footer_1:
+    st.markdown(f"👨‍💻 {t('تم التطوير بواسطة', 'Developed by')}: **ENG.GODA EMAD**")
+
+with col_footer_2:
     st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>', unsafe_allow_html=True)
-with col_f3:
+
+with col_footer_3:
     st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>', unsafe_allow_html=True)
 
-st.caption(f"--- \n {t('تم التحديث في', 'Updated at')}: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026")
+st.caption(f"--- \n {t('توقيت التقرير', 'Report Time')}: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026")
