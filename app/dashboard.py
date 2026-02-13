@@ -3,13 +3,11 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import joblib, os, time
-import google.generativeai as genai
+# تعديل بسيط في تعريف الموديل
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
-# حط المفتاح اللي نسخته بين القوسين هنا
+# جرب تعدل الـ configure لتحديد الـ API Version
 genai.configure(api_key="AIzaSyAtRd8ixzF0fcYQG-xw1Rg0RhMl0u6BJn8")
-
-# تعريف الموديل
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 from utils import run_backtesting
 
 # ================== إعدادات الصفحة ==================
