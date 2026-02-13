@@ -126,80 +126,79 @@ def get_metrics(_d, _f, _s, _m):
 # استدعاء الدالة
 metrics = get_metrics(df_s, feature_names, scaler, model)
 
-# ================== 3️⃣ محرك التوقع ==================
+# ================== 3️⃣ محرك التوقع (النسخة المصلحة من الانفجار الرقمي) ==================
+
 def generate_forecast(hist, h, scen_val, res_std):
     """
-    توليد توقعات المبيعات المستقبلية مع نطاق ثقة.
-    hist       : DataFrame تاريخي يحتوي على عمود 'sales'
-    h          : عدد أيام التوقع
-    scen_val   : معامل السيناريو (متشائم/واقعي/متفائل)
-    res_std    : الانحراف المعياري للبواقي (Residual Std)
+    دالة توليد التوقعات مع نظام حماية "Cap" لمنع الأرقام العملاقة.
     """
     np.random.seed(42)
     preds, lows, ups = [], [], []
+    
+    # 1. تنظيف البيانات التاريخية (آخر 30 يوم لضمان حداثة التريند)
+    # التأكد من عدم وجود أصفار تعطل الحسابات
+    mean_sales = float(hist['sales'].mean())
+    curr = hist[['sales']].copy().tail(30).fillna(mean_sales)
+    
+    # 2. وضع سقف منطقي للمبيعات (مثلاً 5 أضعاف أعلى مبيعات تاريخية)
+    # ده بيمنع ظهور الـ $66 Million المهيسة
+    logical_cap = hist['sales'].max() * 5 
+    if logical_cap == 0: logical_cap = 1000000 # قيمة افتراضية لو الداتا فاضية
 
-    # تأكد من وجود العمود 'sales'
-    if 'sales' not in hist.columns:
-        raise ValueError("'sales' column is missing in the historical data!")
-
-    curr = hist[['sales']].copy().fillna(0)
+    # 3. التأكد من أن الخطأ المعياري (Standard Deviation) منطقي
+    # لو الـ res_std طالع صفر أو رقم خيالي بنصلحه
+    actual_std = hist['sales'].std()
+    safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 10)
 
     for i in range(h):
         nxt = curr.index[-1] + pd.Timedelta(days=1)
-
-        # تجهيز الميزات المطلوبة للتنبؤ
+        
+        # بناء المميزات (Features)
         feats = {
-            'dayofweek_sin': np.sin(2 * np.pi * nxt.dayofweek / 7),
-            'dayofweek_cos': np.cos(2 * np.pi * nxt.dayofweek / 7),
-            'month_sin': np.sin(2 * np.pi * (nxt.month - 1) / 12),
-            'month_cos': np.cos(2 * np.pi * (nxt.month - 1) / 12),
-            'lag_1': float(curr['sales'].iloc[-1]),
-            'lag_7': float(curr['sales'].iloc[-7] if len(curr) >= 7 else curr['sales'].mean()),
-            'rolling_mean_7': float(curr['sales'].tail(7).mean()),
+            'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 
+            'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
+            'month_sin': np.sin(2*np.pi*(nxt.month-1)/12), 
+            'month_cos': np.cos(2*np.pi*(nxt.month-1)/12),
+            'lag_1': float(curr['sales'].iloc[-1]), 
+            'lag_7': float(curr['sales'].iloc[-7] if len(curr)>=7 else mean_sales),
+            'rolling_mean_7': float(curr['sales'].tail(7).mean()), 
             'rolling_mean_14': float(curr['sales'].tail(14).mean()),
-            'is_weekend': 1 if nxt.dayofweek >= 5 else 0,
-            'was_closed_yesterday': 1 if curr['sales'].iloc[-1] <= 0 else 0
+            'is_weekend': 1 if nxt.dayofweek>=5 else 0, 
+            'was_closed_yesterday': 1 if curr['sales'].iloc[-1]<=0 else 0
         }
-
-        # تحويل للـ DataFrame مع ترتيب الأعمدة
+        
+        # تحويل الداتا وتجهيزها للموديل
         X = pd.DataFrame([feats])[feature_names]
-
-        # التنبؤ مع حماية القيم
-        try:
-            p = np.expm1(np.clip(model.predict(scaler.transform(X))[0], -10, 15)) * scen_val
-        except Exception as e:
-            st.warning(f"⚠ خطأ أثناء التنبؤ في اليوم {nxt.date()}: {e}")
-            p = 0
-
-        # نطاق الثقة 95%
-        b = 1.96 * res_std * np.sqrt(i + 1)
-
+        X_scaled = scaler.transform(X)
+        
+        # التوقع اللوغاريتمي
+        p_log = model.predict(X_scaled)[0]
+        
+        # --- الحماية القصوى ---
+        # نقص الـ log عند 12 لضمان عدم تخطي الـ exp لملايين غير منطقية
+        p_log_safe = np.clip(p_log, 0, 12) 
+        
+        # تحويل من Log إلى رقم مبيعات حقيقي مع ضرب السيناريو
+        p = np.expm1(p_log_safe) * scen_val
+        
+        # تطبيق السقف المنطقي
+        p = min(p, logical_cap)
+        
+        # حساب نطاق الثقة (Min/Max)
+        # np.sqrt(i+1) بيخلي النطاق يوسع مع زيادة الأيام (طبيعي في الإحصاء)
+        boost = 1.96 * safe_std * np.sqrt(i + 1)
+        
         preds.append(float(p))
-        lows.append(float(max(0, p - b)))
-        ups.append(float(p + b))
-
-        # تحديث البيانات التاريخية للتنبؤ اليوم التالي
+        lows.append(float(max(0, p - boost)))
+        ups.append(float(min(p + boost, logical_cap * 1.2))) # سقف للأقصى كمان
+        
+        # تحديث البيانات للدورة القادمة (تغذية راجعة)
         curr.loc[nxt] = [p]
+        
+    return preds, lows, ups, curr.index[-h:]
 
-    return np.array(preds), np.array(lows), np.array(ups), curr.index[-h:]
-
-# ================== استدعاء التنبؤ مع حماية NameError ==================
-try:
-    p, l, u, d = generate_forecast(
-        df_s,
-        horizon,
-        scen_map.get(scen, 1.0),
-        metrics.get('residuals_std', 1.0)
-    )
-
-    # تنظيف القيم من NaN و infinite
-    p = np.nan_to_num(p, nan=0.0, posinf=1e9, neginf=0.0)
-    l = np.nan_to_num(l, nan=0.0, posinf=1e9, neginf=0.0)
-    u = np.nan_to_num(u, nan=0.0, posinf=1e9, neginf=0.0)
-
-except Exception as e:
-    st.error(f"❌ خطأ أثناء توليد التوقعات: {e}")
-    p, l, u, d = np.array([]), np.array([]), np.array([]), np.array([])
+# تنفيذ التوقع بناءً على الداتا المسحوبة من الجزء الثاني
+p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
 
 # ================== 4️⃣ العرض البصري والنتائج ==================
 
