@@ -85,7 +85,7 @@ def generate_forecast(hist, h, scen_val, res_std):
     return preds, lows, ups, curr.index[-h:]
 
 p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
-# ================== 4️⃣ العرض البصري والنتائج (النسخة المصلحة) ==================
+# ================== 4️⃣ العرض البصري والنتائج (النسخة المصلحة 100%) ==================
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
 # صف الإحصائيات (Metrics)
@@ -95,14 +95,17 @@ m2.metric(t("دقة الموديل (R²)", "Model Accuracy"), f"{metrics['r2']:.
 m3.metric(t("نسبة الخطأ (MAPE)", "Error Rate"), f"{metrics['mape']*100:.1f}%")
 m4.metric(t("زمن المعالجة", "Inference Time"), "0.14 s")
 
-# الرسم البياني
+# الرسم البياني (تم حذف key من هنا لأنه لا ينتمي لـ Plotly)
 fig = go.Figure()
 fig.add_trace(go.Scatter(x=df_s.index[-60:], y=df_s['sales'].tail(60), name=t("سابق", "Actual"), line=dict(color="#94a3b8")))
 fig.add_trace(go.Scatter(x=d, y=p, name=t("توقع الذكاء", "AI Forecast"), line=dict(color=neon_color, width=4)))
 fig.add_trace(go.Scatter(x=np.concatenate([d, d[::-1]]), y=np.concatenate([u, l[::-1]]), 
                          fill='toself', fillcolor='rgba(0, 242, 254, 0.1)', line=dict(color='rgba(255,255,255,0)'), name=t("نطاق الثقة", "Confidence")))
-fig.update_layout(template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified", key="main_forecast_chart")
-st.plotly_chart(fig, use_container_width=True)
+
+fig.update_layout(template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
+
+# الـ key مكانه الصحيح هنا جوه دالة st.plotly_chart
+st.plotly_chart(fig, use_container_width=True, key="main_forecast_chart_unique")
 
 c1, c2 = st.columns(2)
 with c1:
@@ -113,24 +116,19 @@ with c1:
     names = [feat_ar.get(n, n) for n in feature_names] if lang=="عربي" else feature_names
     fig_i = go.Figure(go.Bar(x=model.get_feature_importance(), y=names, orientation='h', marker=dict(color=neon_color)))
     fig_i.update_layout(template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', height=350, yaxis={'categoryorder':'total ascending'})
-    st.plotly_chart(fig_i, use_container_width=True, key="feature_importance_chart")
+    
+    # الـ key مكانه الصحيح هنا
+    st.plotly_chart(fig_i, use_container_width=True, key="feature_importance_chart_unique")
 
 with c2:
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Data Table Details"))
-    
-    # تحويل البيانات لأرقام صحيحة (Integer) لمنع ظهور الأصفار (الـ 000)
     res_df = pd.DataFrame({
         t("التاريخ", "Date"): d,
         t("التوقع", "Forecast"): np.round(p).astype(int),
         t("الأدنى", "Min"): np.round(l).astype(int),
         t("الأقصى", "Max"): np.round(u).astype(int)
     })
-    
-    # تنسيق الجدول بشكل احترافي
-    st.dataframe(
-        res_df.style.format("{:,}").background_gradient(cmap='Blues', subset=[t("التوقع", "Forecast")]), 
-        use_container_width=True
-    )
+    st.dataframe(res_df.style.format("{:,}").background_gradient(cmap='Blues', subset=[t("التوقع", "Forecast")]), use_container_width=True)
     st.download_button(t("تحميل ملف CSV", "Download CSV"), res_df.to_csv(index=False), "forecast.csv")
 # ================== 5️⃣ تحليل توزيع الأخطاء (مع إضافة Key فريد) ==================
 st.markdown("---")
