@@ -74,7 +74,6 @@ with st.spinner("⏳ جاري تحميل النموذج والبيانات..."):
 if model is None:
     st.stop()
 
-
 # ================== 2️⃣ السايدبار والمعالجة ==================
 # اختيار اللغة
 lang = st.sidebar.selectbox("🌐 اللغة / Language", ["عربي", "English"])
@@ -108,7 +107,7 @@ df_s = df_active[df_active['store_id'] == selected_store] if 'store_id' in df_ac
 # اختيار عدد أيام التوقع
 horizon = st.sidebar.slider(t("أيام التوقع", "Days"), min_value=1, max_value=60, value=14)
 
-# السيناريوهات
+# اختيار السيناريو
 scen_map = {"متشائم": 0.85, "واقعي": 1.0, "متفائل": 1.15}
 scen = st.sidebar.select_slider(
     t("السيناريو", "Scenario"),
@@ -116,14 +115,15 @@ scen = st.sidebar.select_slider(
     value="واقعي"
 )
 
-# ================== حساب Metrics مع حماية caching ==================
-@st.cache_data(show_spinner=False, allow_output_mutation=True)
+# ================== حساب Metrics مع حماية من مشاكل caching ==================
+@st.cache_resource(show_spinner=False)
 def get_metrics(_d, _f, _s, _m):
     """
-    حساب مقاييس النموذج (Backtesting) مع حماية من مشاكل UnhashableParamError.
+    حساب مقاييس النموذج (Backtesting) بدون مشاكل caching للكائنات الكبيرة.
     """
     return run_backtesting(_d, _f, _s, _m)
 
+# استدعاء الدالة
 metrics = get_metrics(df_s, feature_names, scaler, model)
 
 # ================== 3️⃣ محرك التوقع ==================
