@@ -499,10 +499,8 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant - Professional Edition) ==================
+# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant - Final PRO Edition) ==================
 st.divider()
-
-# عنوان احترافي مزدوج اللغة
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
 if 'p' in locals() and len(p) > 0:
@@ -512,84 +510,63 @@ if 'p' in locals() and len(p) > 0:
     peak_date = d[np.argmax(p)]
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # تحضير أسماء الأيام للتقرير
     days_ar = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
     days_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     day_name = days_ar[peak_date.dayofweek] if lang == "عربي" else days_en[peak_date.dayofweek]
 
-    # --- 2. عرض كروت المؤشرات الحيوية ---
+    # --- 2. عرض كروت المؤشرات ---
     c1, c2, c3 = st.columns(3)
-    with c1:
-        st.metric(t("إجمالي مبيعات الفترة", "Total Period Sales"), f"${total_sales_val:,.0f}")
-    with c2:
-        st.metric(t("يوم الذروة", "Peak Sales Day"), day_name)
-    with c3:
-        st.metric(t("اتجاه النمو", "Growth Trend"), f"{growth_val:+.1f}%")
+    with c1: st.metric(t("إجمالي مبيعات الفترة", "Total Period Sales"), f"${total_sales_val:,.0f}")
+    with c2: st.metric(t("يوم الذروة", "Peak Sales Day"), day_name)
+    with c3: st.metric(t("اتجاه النمو", "Growth Trend"), f"{growth_val:+.1f}%")
 
     st.markdown("---")
 
-    # --- 3. محرك Gemini الاحترافي (نظام المحاولات المتعددة) ---
+    # --- 3. محرك Gemini الاحترافي ---
     if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_pro"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
             
-            # البرومت الهندسي (Prompt Engineering)
             prompt = f"""
             Act as a world-class Retail Strategy Consultant.
-            Data Context:
-            - Store: {selected_store}
-            - Forecast Window: {horizon} days
-            - Predicted Revenue: ${total_sales_val:,.0f}
-            - Highest Peak: ${peak_val:,.0f} on {day_name}
-            - Market Sentiment: {scen}
-            - Trend: {growth_val:+.1f}%
-
-            Task: Provide 3 ultra-short, actionable executive insights for (Inventory, Marketing, Staffing).
-            Language: {lang}
-            Tone: Professional, direct, and data-driven.
+            Context: Store {selected_store}, {horizon} days forecast, ${total_sales_val:,.0f} revenue, {scen} scenario.
+            Task: Provide 3 short executive insights for (Inventory, Marketing, Staffing).
+            Language: {lang}.
             """
 
-            # قائمة المحاولات لضمان عدم حدوث Error 404
-            models_to_try = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']
+            # قائمة الموديلات المحدثة لعام 2026
+            models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
             success = False
+            error_log = "" # لتخزين الخطأ لو حدث
             
             for model_name in models_to_try:
                 try:
-                    # محاولة الاتصال بالموديل
                     m = genai.GenerativeModel(model_name)
                     response = m.generate_content(prompt)
                     
-                    # عرض النتيجة بتصميم جذاب
                     st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
-                    st.success(f"**{t('تم التحليل باستخدام موديل', 'Analyzed using model')}: {model_name}**")
                     st.info(response.text)
-                    
-                    # إضافة لمسة "خطة عمل" سريعة
-                    st.caption(t("💡 هذه التوصيات مبنية على خوارزميات التنبؤ المتقدمة لعام 2026.", 
-                                 "💡 These recommendations are based on 2026 advanced forecasting algorithms."))
+                    st.success(f"✔️ {t('تم التحليل بنجاح', 'Analysis successful')}")
                     success = True
-                    break # نجحت المحاولة، اخرج من اللوب
+                    break 
                 except Exception as e:
-                    continue # فشل؟ جرب الموديل اللي بعده
+                    error_log = str(e) # سجل آخر خطأ حصل
+                    continue
             
             if not success:
-                st.error(t("❌ فشل الاتصال بخوادم Google AI. يرجى التأكد من صلاحية الـ API Key وإعدادات الإنترنت.", 
-                           "❌ Failed to connect to Google AI. Please check your API Key and internet settings."))
+                st.error(t("❌ فشل الاتصال بخوادم Google AI.", "❌ Failed to connect to Google AI."))
+                # الزيادة المهمة هنا: عرض الخطأ الحقيقي للمهندس جودة
+                with st.expander("🛠️ تشخيص العطل التقني (Technical Diagnostic)"):
+                    st.warning("هذا الخطأ يظهر لك فقط كمطور لحل المشكلة:")
+                    st.code(error_log)
 
-# ================== 🔗 الروابط المهنية وتذييل الصفحة (ENG.GODA EMAD Edition) ==================
+# ================== 🔗 الروابط المهنية (ENG.GODA EMAD Edition) ==================
 st.write("---")
-col_footer_1, col_footer_2, col_footer_3 = st.columns([2, 1, 1])
+col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
+with col_f1:
+    st.markdown(t(f"👨‍💻 تم التطوير بواسطة: **ENG.GODA EMAD**", f"👨‍💻 Developed by: **ENG.GODA EMAD**"))
+with col_f2:
+    st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>', unsafe_allow_html=True)
+with col_f3:
+    st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>', unsafe_allow_html=True)
 
-with col_footer_1:
-    st.markdown(t(f"👨‍💻 تم التطوير بواسطة: **ENG.GODA EMAD** | الإصدار {MODEL_VERSION}", 
-                  f"👨‍💻 Developed by: **ENG.GODA EMAD** | Version {MODEL_VERSION}"))
-
-with col_footer_2:
-    st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>', unsafe_allow_html=True)
-
-with col_footer_3:
-    st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>', unsafe_allow_html=True)
-
-st.caption("---")
-current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
-st.caption(t(f"تم تحديث هذا التقرير في: {current_time} | جميع الحقوق محفوظة لـ ENG.GODA EMAD 2026", 
-              f"Report updated at: {current_time} | All rights reserved to ENG.GODA EMAD 2026"))
+st.caption(f"--- \n {t('تم التحديث في', 'Updated at')}: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026")
