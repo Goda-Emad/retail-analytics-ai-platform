@@ -139,78 +139,78 @@ def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
 # تشغيل الحسابات
 metrics = get_dynamic_metrics(df_s, model, scaler, feature_names)
 
-# ================== 3️⃣ محرك التوقع (النسخة المصلحة من الانفجار الرقمي) ==================
+# ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة) ==================
 
 def generate_forecast(hist, h, scen_val, res_std):
     """
-    دالة توليد التوقعات مع نظام حماية "Cap" لمنع الأرقام العملاقة.
+    دالة توليد التوقعات: تمنع الانفجار الرقمي وتبدأ التواريخ من اليوم 2026.
     """
     np.random.seed(42)
     preds, lows, ups = [], [], []
     
-    # 1. تنظيف البيانات التاريخية (آخر 30 يوم لضمان حداثة التريند)
-    # التأكد من عدم وجود أصفار تعطل الحسابات
+    # 1. إعداد البيانات المرجعية (آخر مبيعات حقيقية)
     mean_sales = float(hist['sales'].mean())
-    curr = hist[['sales']].copy().tail(30).fillna(mean_sales)
     
-    # 2. وضع سقف منطقي للمبيعات (مثلاً 5 أضعاف أعلى مبيعات تاريخية)
-    # ده بيمنع ظهور الـ $66 Million المهيسة
-    logical_cap = hist['sales'].max() * 5 
-    if logical_cap == 0: logical_cap = 1000000 # قيمة افتراضية لو الداتا فاضية
-
-    # 3. التأكد من أن الخطأ المعياري (Standard Deviation) منطقي
-    # لو الـ res_std طالع صفر أو رقم خيالي بنصلحه
+    # 2. تحديد تاريخ البداية (من اليوم 13 فبراير 2026)
+    # ده السطر اللي بيحل مشكلة 2011
+    start_date = pd.Timestamp.now().normalize() 
+    
+    # 3. نظام الحماية والسقف المنطقي
+    logical_cap = hist['sales'].max() * 5
+    if logical_cap == 0: logical_cap = 1000000
+    
     actual_std = hist['sales'].std()
-    safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 10)
+    safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 500)
+
+    # مبيعات وهمية للـ Lags عشان الموديل يشتغل صح
+    temp_sales_buffer = list(hist['sales'].tail(30).values)
+    forecast_dates = []
 
     for i in range(h):
-        nxt = curr.index[-1] + pd.Timedelta(days=1)
+        # حساب التاريخ الجديد (بكرة، بعده، وهكذا في 2026)
+        nxt = start_date + pd.Timedelta(days=i+1)
+        forecast_dates.append(nxt)
         
-        # بناء المميزات (Features)
+        # بناء المميزات بناءً على التاريخ الجديد 2026
         feats = {
             'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 
             'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
             'month_sin': np.sin(2*np.pi*(nxt.month-1)/12), 
             'month_cos': np.cos(2*np.pi*(nxt.month-1)/12),
-            'lag_1': float(curr['sales'].iloc[-1]), 
-            'lag_7': float(curr['sales'].iloc[-7] if len(curr)>=7 else mean_sales),
-            'rolling_mean_7': float(curr['sales'].tail(7).mean()), 
-            'rolling_mean_14': float(curr['sales'].tail(14).mean()),
+            'lag_1': float(temp_sales_buffer[-1]), 
+            'lag_7': float(temp_sales_buffer[-7] if len(temp_sales_buffer)>=7 else mean_sales),
+            'rolling_mean_7': float(np.mean(temp_sales_buffer[-7:])), 
+            'rolling_mean_14': float(np.mean(temp_sales_buffer[-14:])),
             'is_weekend': 1 if nxt.dayofweek>=5 else 0, 
-            'was_closed_yesterday': 1 if curr['sales'].iloc[-1]<=0 else 0
+            'was_closed_yesterday': 1 if temp_sales_buffer[-1]<=0 else 0
         }
         
-        # تحويل الداتا وتجهيزها للموديل
+        # تحويل وتجهيز البيانات
         X = pd.DataFrame([feats])[feature_names]
         X_scaled = scaler.transform(X)
         
-        # التوقع اللوغاريتمي
+        # التوقع اللوغاريتمي الآمن
         p_log = model.predict(X_scaled)[0]
-        
-        # --- الحماية القصوى ---
-        # نقص الـ log عند 12 لضمان عدم تخطي الـ exp لملايين غير منطقية
         p_log_safe = np.clip(p_log, 0, 12) 
         
-        # تحويل من Log إلى رقم مبيعات حقيقي مع ضرب السيناريو
+        # التحويل والسيناريو والسقف
         p = np.expm1(p_log_safe) * scen_val
-        
-        # تطبيق السقف المنطقي
         p = min(p, logical_cap)
         
-        # حساب نطاق الثقة (Min/Max)
-        # np.sqrt(i+1) بيخلي النطاق يوسع مع زيادة الأيام (طبيعي في الإحصاء)
+        # حساب النطاق (Min/Max)
         boost = 1.96 * safe_std * np.sqrt(i + 1)
         
         preds.append(float(p))
         lows.append(float(max(0, p - boost)))
-        ups.append(float(min(p + boost, logical_cap * 1.2))) # سقف للأقصى كمان
+        ups.append(float(min(p + boost, logical_cap * 1.2)))
         
-        # تحديث البيانات للدورة القادمة (تغذية راجعة)
-        curr.loc[nxt] = [p]
+        # تحديث البافر لليوم التالي
+        temp_sales_buffer.append(p)
         
-    return preds, lows, ups, curr.index[-h:]
+    # إرجاع النتائج مع أندكس التواريخ الجديد 2026
+    return preds, lows, ups, pd.DatetimeIndex(forecast_dates)
 
-# تنفيذ التوقع بناءً على الداتا المسحوبة من الجزء الثاني
+# تنفيذ التوقع بناءً على المعطيات
 p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
 
 # ================== 4️⃣ العرض البصري والنتائج ==================
