@@ -5,94 +5,210 @@ import plotly.graph_objects as go
 import joblib, os, time
 from utils import run_backtesting
 
-# ================== 0️⃣ الإعدادات والثيم ==================
+# ================== إعدادات الصفحة ==================
 MODEL_VERSION = "v5.6 (Final Fix)"
-st.set_page_config(page_title=f"Retail AI {MODEL_VERSION}", layout="wide", page_icon="📈")
+st.set_page_config(
+    page_title=f"Retail AI {MODEL_VERSION}",
+    layout="wide",
+    page_icon="📈"
+)
 
-# إضافة قائمة اختيار الثيم في السايدبار
-theme_choice = st.sidebar.selectbox("🎨 الثيم / Theme", options=["Dark Mode", "Light Mode"])
+# ================== اختيار الثيم ==================
+theme_choice = st.sidebar.selectbox(
+    "🎨 اختيار الثيم / Theme",
+    options=["Dark Mode", "Light Mode"],
+    index=1  # Light Mode افتراضي
+)
 
-# تطبيق الخلفية بناءً على الاختيار (Dark/Light)
+# ================== تهيئة الثيم ==================
 if theme_choice == "Dark Mode":
-    bg_style = "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
-    chart_template, neon_color, text_clr = "plotly_dark", "#00f2fe", "white"
+    BG_STYLE = "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+    CHART_TEMPLATE = "plotly_dark"
+    NEON_COLOR = "#00f2fe"
+    TEXT_COLOR = "white"
 else:
-    bg_style = "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
-    chart_template, neon_color, text_clr = "plotly_white", "#3b82f6", "#1e293b"
+    BG_STYLE = "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
+    CHART_TEMPLATE = "plotly_white"
+    NEON_COLOR = "#3b82f6"
+    TEXT_COLOR = "#1e293b"
 
-st.markdown(f"""<style>.stApp {{background: {bg_style}; color: {text_clr};}}</style>""", unsafe_allow_html=True)
+# تطبيق الخلفية ولون النص
+st.markdown(
+    f"""
+    <style>
+        .stApp {{
+            background: {BG_STYLE};
+            color: {TEXT_COLOR};
+        }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-# ================== 1️⃣ تحميل الملفات ==================
+# ================== تحميل الملفات الأساسية ==================
 @st.cache_resource
 def load_assets():
+    """
+    تحميل النموذج، السكيلر، أسماء الخصائص والبيانات الجاهزة.
+    يُستخدم cache_resource لتخزين الملفات وعدم إعادة تحميلها عند كل تحديث.
+    """
     try:
-        curr = os.path.dirname(os.path.abspath(__file__))
-        model = joblib.load(os.path.join(curr, "catboost_sales_model_10features.pkl"))
-        scaler = joblib.load(os.path.join(curr, "scaler_10features.pkl"))
-        features = joblib.load(os.path.join(curr, "feature_names_10features.pkl"))
-        data = pd.read_parquet(os.path.join(curr, "daily_sales_ready_10features.parquet"))
-        return model, scaler, features, data
+        curr_dir = os.path.dirname(os.path.abspath(__file__))
+
+        model = joblib.load(os.path.join(curr_dir, "catboost_sales_model_10features.pkl"))
+        scaler = joblib.load(os.path.join(curr_dir, "scaler_10features.pkl"))
+        feature_names = joblib.load(os.path.join(curr_dir, "feature_names_10features.pkl"))
+        df_raw = pd.read_parquet(os.path.join(curr_dir, "daily_sales_ready_10features.parquet"))
+
+        return model, scaler, feature_names, df_raw
+
     except Exception as e:
-        st.error(f"❌ خطأ في تحميل الملفات: {e}")
+        st.error(f"❌ فشل تحميل الملفات الأساسية: {e}")
         return None, None, None, None
 
-model, scaler, feature_names, df_raw = load_assets()
-# ================== 2️⃣ السايدبار والمعالجة ==================
-lang = st.sidebar.selectbox("🌐 اللغة / Language", ["عربي", "English"])
-t = lambda ar, en: ar if lang=="عربي" else en
+# تحميل الملفات مع رسالة انتظار لتحسين تجربة المستخدم
+with st.spinner("⏳ جاري تحميل النموذج والبيانات..."):
+    model, scaler, feature_names, df_raw = load_assets()
 
+# التأكد من نجاح التحميل قبل الاستمرار
+if model is None:
+    st.stop()
+
+# ================== 2️⃣ السايدبار والمعالجة ==================
+# اختيار اللغة
+lang = st.sidebar.selectbox("🌐 اللغة / Language", ["عربي", "English"])
+t = lambda ar, en: ar if lang == "عربي" else en  # دالة بسيطة للترجمة حسب اختيار المستخدم
+
+# رفع ملف CSV من المستخدم (اختياري)
 uploaded = st.sidebar.file_uploader(t("رفع ملف CSV", "Upload CSV"), type="csv")
-df_active = pd.read_csv(uploaded) if uploaded else df_raw.copy()
+if uploaded:
+    try:
+        df_active = pd.read_csv(uploaded)
+        st.sidebar.success(t("تم تحميل الملف بنجاح ✅", "File uploaded successfully ✅"))
+    except Exception as e:
+        st.sidebar.error(t(f"خطأ في قراءة الملف: {e}", f"Error reading file: {e}"))
+        df_active = df_raw.copy()
+else:
+    df_active = df_raw.copy()
+
+# تنظيف أسماء الأعمدة
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
+# تحويل العمود 'date' إلى datetime وترتيب البيانات
 if 'date' in df_active.columns:
-    df_active['date'] = pd.to_datetime(df_active['date'])
+    df_active['date'] = pd.to_datetime(df_active['date'], errors='coerce')
     df_active = df_active.sort_values('date').set_index('date')
 
+# اختيار المتجر
 store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
 selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list)
-df_s = df_active[df_active['store_id']==selected_store] if 'store_id' in df_active.columns else df_active
+df_s = df_active[df_active['store_id'] == selected_store] if 'store_id' in df_active.columns else df_active
 
-horizon = st.sidebar.slider(t("أيام التوقع", "Days"), 1, 60, 14)
+# إعدادات التوقع
+horizon = st.sidebar.slider(t("أيام التوقع", "Days"), min_value=1, max_value=60, value=14)
 scen_map = {"متشائم": 0.85, "واقعي": 1.0, "متفائل": 1.15}
-scen = st.sidebar.select_slider(t("السيناريو", "Scenario"), options=list(scen_map.keys()), value="واقعي")
+scen = st.sidebar.select_slider(
+    t("السيناريو", "Scenario"),
+    options=list(scen_map.keys()),
+    value="واقعي"
+)
 
+# ================== حساب المقاييس باستخدام Backtesting ==================
 @st.cache_data
-def get_metrics(_d, _f, _s, _m): return run_backtesting(_d, _f, _s, _m)
-metrics = get_metrics(df_s, feature_names, scaler, model)
+def get_metrics(df, feature_names, scaler, model):
+    """
+    دالة لحساب مقاييس الأداء والتنبؤات باستخدام النموذج.
+    """
+    return run_backtesting(df, feature_names, scaler, model)
+
+# حساب المقاييس للبيانات المحددة
+with st.spinner(t("⏳ حساب المقاييس...", "Calculating metrics...")):
+    metrics = get_metrics(df_s, feature_names, scaler, model)
+
 # ================== 3️⃣ محرك التوقع ==================
-def generate_forecast(hist, h, scen_val, res_std):
+def generate_forecast(hist, horizon, scen_val, res_std):
+    """
+    توليد توقعات المبيعات لعدد محدد من الأيام مع حدود الثقة 95%.
+
+    Parameters
+    ----------
+    hist : pd.DataFrame
+        البيانات التاريخية للمبيعات مع عمود 'sales'.
+    horizon : int
+        عدد أيام التوقع.
+    scen_val : float
+        معامل السيناريو (متشائم 0.85، واقعي 1.0، متفائل 1.15).
+    res_std : float
+        الانحراف المعياري لبواقي النموذج لتحديد الثقة في التوقعات.
+
+    Returns
+    -------
+    preds : list
+        قائمة التوقعات اليومية.
+    lows : list
+        الحد الأدنى للتوقع (95% CI).
+    ups : list
+        الحد الأعلى للتوقع (95% CI).
+    forecast_index : pd.DatetimeIndex
+        تواريخ الأيام المتوقعة.
+    """
     np.random.seed(42)
+    
     preds, lows, ups = [], [], []
     curr = hist[['sales']].copy().fillna(0)
-    for i in range(h):
-        nxt = curr.index[-1] + pd.Timedelta(days=1)
-        feats = {
-            'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
-            'month_sin': np.sin(2*np.pi*(nxt.month-1)/12), 'month_cos': np.cos(2*np.pi*(nxt.month-1)/12),
-            'lag_1': float(curr['sales'].iloc[-1]), 
-            'lag_7': float(curr['sales'].iloc[-7] if len(curr)>=7 else curr['sales'].mean()),
-            'rolling_mean_7': float(curr['sales'].tail(7).mean()), 
-            'rolling_mean_14': float(curr['sales'].tail(14).mean()),
-            'is_weekend': 1 if nxt.dayofweek>=5 else 0, 
-            'was_closed_yesterday': 1 if curr['sales'].iloc[-1]<=0 else 0
-        }
-        X = pd.DataFrame([feats])[feature_names]
-        p = np.expm1(np.clip(model.predict(scaler.transform(X))[0], -10, 15)) * scen_val
-        b = 1.96 * res_std * np.sqrt(i+1)
-        preds.append(float(p)); lows.append(float(max(0, p-b))); ups.append(float(p+b))
-        curr.loc[nxt] = [p]
-    return preds, lows, ups, curr.index[-h:]
 
-p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
+    for i in range(horizon):
+        # تحديد اليوم التالي
+        next_day = curr.index[-1] + pd.Timedelta(days=1)
+        
+        # إنشاء الخصائص للنموذج
+        feats = {
+            'dayofweek_sin': np.sin(2 * np.pi * next_day.dayofweek / 7),
+            'dayofweek_cos': np.cos(2 * np.pi * next_day.dayofweek / 7),
+            'month_sin': np.sin(2 * np.pi * (next_day.month - 1) / 12),
+            'month_cos': np.cos(2 * np.pi * (next_day.month - 1) / 12),
+            'lag_1': float(curr['sales'].iloc[-1]),
+            'lag_7': float(curr['sales'].iloc[-7] if len(curr) >= 7 else curr['sales'].mean()),
+            'rolling_mean_7': float(curr['sales'].tail(7).mean()),
+            'rolling_mean_14': float(curr['sales'].tail(14).mean()),
+            'is_weekend': 1 if next_day.dayofweek >= 5 else 0,
+            'was_closed_yesterday': 1 if curr['sales'].iloc[-1] <= 0 else 0
+        }
+
+        # تحويل الخصائص إلى DataFrame بالترتيب الصحيح
+        X = pd.DataFrame([feats])[feature_names]
+
+        # توقع النموذج وتحويل اللوغاريتم العكسي، مع Clip لمنع القيم الشاذة
+        pred = np.expm1(np.clip(model.predict(scaler.transform(X))[0], -10, 15)) * scen_val
+        
+        # حساب حدود الثقة 95%
+        ci_margin = 1.96 * res_std * np.sqrt(i + 1)
+        
+        # تخزين النتائج
+        preds.append(float(pred))
+        lows.append(float(max(0, pred - ci_margin)))
+        ups.append(float(pred + ci_margin))
+        
+        # تحديث البيانات بالمبيعات المتوقعة لليوم التالي
+        curr.loc[next_day] = [pred]
+
+    # إرجاع القيم مع تواريخ الأيام المتوقعة
+    return preds, lows, ups, curr.index[-horizon:]
+
+# توليد التوقعات باستخدام البيانات المختارة والسيناريو
+preds, lows, ups, forecast_dates = generate_forecast(
+    hist=df_s,
+    horizon=horizon,
+    scen_val=scen_map[scen],
+    res_std=metrics['residuals_std']
+)
+
 # ================== 4️⃣ العرض البصري والنتائج ==================
 
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
 # ================== 1️⃣ الإحصائيات ==================
-
 # تنظيف القيم الأساسية
-p = np.array(p)
 p = np.nan_to_num(p)
 p = np.clip(p, 0, 1e9)
 
@@ -103,39 +219,22 @@ u = p * (1 + confidence_ratio)
 
 total_sales = float(np.sum(p))
 
-# حماية من قيم R² الغريبة
+# حماية القيم الغريبة لمقاييس الأداء
 r2_safe = metrics.get("r2", 0)
-if r2_safe < -1 or r2_safe > 1:
-    r2_safe = 0
+r2_safe = 0 if r2_safe < -1 or r2_safe > 1 else r2_safe
 
 mape_safe = metrics.get("mape", 0)
-if not np.isfinite(mape_safe):
-    mape_safe = 0
+mape_safe = 0 if not np.isfinite(mape_safe) else mape_safe
 
+# عرض المقاييس في 4 أعمدة
 m1, m2, m3, m4 = st.columns(4)
 
-m1.metric(
-    t("إجمالي المبيعات المتوقع", "Expected Sales"),
-    f"${total_sales:,.0f}"
-)
-
-m2.metric(
-    t("دقة الموديل (R²)", "Model Accuracy"),
-    f"{r2_safe:.3f}"
-)
-
-m3.metric(
-    t("نسبة الخطأ (MAPE)", "Error Rate"),
-    f"{mape_safe*100:.1f}%"
-)
-
-m4.metric(
-    t("زمن المعالجة", "Inference Time"),
-    "0.14 s"
-)
+m1.metric(t("إجمالي المبيعات المتوقع", "Expected Sales"), f"${total_sales:,.0f}")
+m2.metric(t("دقة الموديل (R²)", "Model Accuracy"), f"{r2_safe:.3f}")
+m3.metric(t("نسبة الخطأ (MAPE)", "Error Rate"), f"{mape_safe*100:.1f}%")
+m4.metric(t("زمن المعالجة", "Inference Time"), "0.14 s")
 
 # ================== 2️⃣ الرسم البياني ==================
-
 fig = go.Figure()
 
 # نطاق الثقة
@@ -143,13 +242,13 @@ fig.add_trace(go.Scatter(
     x=np.concatenate([d, d[::-1]]),
     y=np.concatenate([u, l[::-1]]),
     fill='toself',
-    fillcolor='rgba(0,242,254,0.15)',
-    line=dict(color='rgba(255,255,255,0)'),
+    fillcolor='rgba(0,242,254,0.15)' if theme_choice=="Light Mode" else 'rgba(0,242,254,0.3)',
+    line=dict(color='rgba(0,0,0,0)'),
     hoverinfo="skip",
     name=t("نطاق التوقع", "Confidence Interval")
 ))
 
-# البيانات السابقة
+# المبيعات السابقة
 fig.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
@@ -162,11 +261,11 @@ fig.add_trace(go.Scatter(
     x=d,
     y=p,
     name=t("توقع الذكاء", "AI Forecast"),
-    line=dict(color=neon_color, width=4)
+    line=dict(color=NEON_COLOR, width=4)
 ))
 
 fig.update_layout(
-    template=chart_template,
+    template=CHART_TEMPLATE,
     hovermode="x unified",
     margin=dict(l=20, r=20, t=30, b=20),
     paper_bgcolor='rgba(0,0,0,0)',
@@ -176,12 +275,10 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 # ================== 3️⃣ تقسيم الأعمدة ==================
-
 c1, c2 = st.columns(2)
 
 # ================== 🎯 أهم العوامل ==================
 with c1:
-
     st.subheader(t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers"))
 
     feat_ar = {
@@ -208,11 +305,11 @@ with c1:
         x=importances,
         y=names,
         orientation='h',
-        marker=dict(color=neon_color)
+        marker=dict(color=NEON_COLOR)
     ))
 
     fig_i.update_layout(
-        template=chart_template,
+        template=CHART_TEMPLATE,
         height=350,
         yaxis={'categoryorder':'total ascending'},
         paper_bgcolor='rgba(0,0,0,0)',
@@ -223,7 +320,6 @@ with c1:
 
 # ================== 📥 جدول البيانات ==================
 with c2:
-
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast Table"))
 
     res_df = pd.DataFrame({
@@ -233,72 +329,134 @@ with c2:
         t("الأقصى", "Max"): u
     })
 
+    # تنسيق الجدول بشكل احترافي
     styled_df = (
         res_df.style
-        .format({
-            res_df.columns[1]: "${:,.0f}",
-            res_df.columns[2]: "${:,.0f}",
-            res_df.columns[3]: "${:,.0f}",
-        })
-        .background_gradient(
-            cmap="Blues",
-            subset=[res_df.columns[1]]
-        )
+        .format({res_df.columns[1]: "${:,.0f}", res_df.columns[2]: "${:,.0f}", res_df.columns[3]: "${:,.0f}"})
+        .background_gradient(cmap="Blues", subset=[res_df.columns[1]])
     )
 
-    st.dataframe(
-        styled_df,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
+    # زر تحميل التقرير
     st.download_button(
         t("⬇ تحميل التقرير CSV", "⬇ Download CSV"),
         res_df.to_csv(index=False).encode("utf-8-sig"),
         "forecast_report.csv"
     )
 
-# ================== 5️⃣ تحليل توزيع الأخطاء (مع إضافة Key فريد) ==================
+# ================== 5️⃣ تحليل توزيع الأخطاء ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
 
+# تقسيم الصفحة إلى عمودين
 col_err1, col_err2 = st.columns(2)
 
+# ================== 1️⃣ توزيع الأخطاء ==================
 with col_err1:
+    # جلب البواقي أو توليد بيانات وهمية إذا لم تتوافر
     residuals = metrics.get('residuals', np.random.normal(0, 1, 100))
-    fig_hist = go.Figure(data=[go.Histogram(x=residuals, nbinsx=30, marker_color=neon_color, opacity=0.7)])
+    residuals = np.nan_to_num(residuals)  # حماية من NaN
+
+    fig_hist = go.Figure(
+        data=[go.Histogram(
+            x=residuals,
+            nbinsx=30,
+            marker_color=NEON_COLOR,
+            opacity=0.7,
+            name=t("توزيع الأخطاء", "Residuals")
+        )]
+    )
+
     fig_hist.update_layout(
         title=t("توزيع أخطاء التنبؤ", "Residuals Distribution"),
-        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+        template=CHART_TEMPLATE,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis_title=t("قيمة الخطأ", "Error Value"),
+        yaxis_title=t("التكرار", "Frequency"),
+        margin=dict(l=20, r=20, t=40, b=20)
     )
-    # أضفنا key هنا لمنع التكرار
+
     st.plotly_chart(fig_hist, use_container_width=True, key="error_hist_chart")
 
+# ================== 2️⃣ الأخطاء عبر الزمن ==================
 with col_err2:
     fig_res_time = go.Figure()
-    fig_res_time.add_trace(go.Scatter(y=residuals, mode='lines', line=dict(color='#ff4b4b', width=1)))
+
+    fig_res_time.add_trace(go.Scatter(
+        y=residuals,
+        mode='lines+markers',
+        line=dict(color="#ff4b4b", width=2),
+        marker=dict(size=4),
+        name=t("الأخطاء", "Residuals")
+    ))
+
     fig_res_time.update_layout(
         title=t("الأخطاء عبر الزمن", "Residuals Over Time"),
-        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+        template=CHART_TEMPLATE,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis_title=t("الترتيب الزمني", "Time Index"),
+        yaxis_title=t("قيمة الخطأ", "Error Value"),
+        margin=dict(l=20, r=20, t=40, b=20),
+        hovermode="x unified"
     )
-    # أضفنا key هنا لمنع التكرار
+
     st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
-    # ================== 6️⃣ مقارنة السيناريوهات (مع إضافة Key فريد) ==================
+    # ================== 6️⃣ مقارنة السيناريوهات ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
 
-p_opt, _, _, _ = generate_forecast(df_s, horizon, 1.15, metrics['residuals_std'])
-p_real, _, _, _ = generate_forecast(df_s, horizon, 1.0, metrics['residuals_std'])
-p_pess, _, _, _ = generate_forecast(df_s, horizon, 0.85, metrics['residuals_std'])
+# توليد التوقعات لكل سيناريو مع حماية القيم
+p_optimistic, _, _, _ = generate_forecast(df_s, horizon, scen_map["متفائل"], metrics['residuals_std'])
+p_realistic, _, _, _ = generate_forecast(df_s, horizon, scen_map["واقعي"], metrics['residuals_std'])
+p_pessimistic, _, _, _ = generate_forecast(df_s, horizon, scen_map["متشائم"], metrics['residuals_std'])
 
+# تحويل NaN إلى صفر وحماية القيم
+p_optimistic = np.nan_to_num(p_optimistic)
+p_realistic = np.nan_to_num(p_realistic)
+p_pessimistic = np.nan_to_num(p_pessimistic)
+
+# رسم المخطط
 fig_scen = go.Figure()
-fig_scen.add_trace(go.Scatter(x=d, y=p_opt, name=t("متفائل", "Optimistic"), line=dict(color='#00ff88', dash='dot')))
-fig_scen.add_trace(go.Scatter(x=d, y=p_real, name=t("واقعي", "Realistic"), line=dict(color=neon_color, width=3)))
-fig_scen.add_trace(go.Scatter(x=d, y=p_pess, name=t("متشائم", "Pessimistic"), line=dict(color='#ff4b4b', dash='dot')))
+
+fig_scen.add_trace(go.Scatter(
+    x=d,
+    y=p_optimistic,
+    name=t("متفائل", "Optimistic"),
+    line=dict(color='#00ff88', width=3, dash='dot')
+))
+
+fig_scen.add_trace(go.Scatter(
+    x=d,
+    y=p_realistic,
+    name=t("واقعي", "Realistic"),
+    line=dict(color=NEON_COLOR, width=4)
+))
+
+fig_scen.add_trace(go.Scatter(
+    x=d,
+    y=p_pessimistic,
+    name=t("متشائم", "Pessimistic"),
+    line=dict(color='#ff4b4b', width=3, dash='dot')
+))
 
 fig_scen.update_layout(
-    template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-    hovermode="x unified"
+    title=t("📊 مقارنة السيناريوهات الثلاثة للتوقعات", "📊 Forecast Scenario Comparison"),
+    xaxis_title=t("التاريخ", "Date"),
+    yaxis_title=t("المبيعات المتوقعة", "Expected Sales"),
+    template=CHART_TEMPLATE,
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    hovermode="x unified",
+    margin=dict(l=20, r=20, t=40, b=20),
+    legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
 )
-# أضفنا key هنا لمنع التكرار
+
+# عرض المخطط في Streamlit مع key فريد لمنع التكرار
 st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_comparison_chart")
+
+
+
+    
