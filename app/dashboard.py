@@ -3,6 +3,13 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import joblib, os, time
+import google.generativeai as genai
+
+# حط المفتاح اللي نسخته بين القوسين هنا
+genai.configure(api_key="AIzaSyAtRd8ixzF0fcYQG-xw1Rg0RhMl0u6BJn8")
+
+# تعريف الموديل
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 from utils import run_backtesting
 
 # ================== إعدادات الصفحة ==================
@@ -487,69 +494,66 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-# ================== 7️⃣ المساعد الذكي والروابط المهنية (AI Insights & Action Plan) ==================
+# ================== 7️⃣ المساعد الذكي الاستراتيجي (Powered by Gemini AI) ==================
 
 st.divider()
+st.header(t("🤖 استشارات الذكاء الاصطناعي الاستراتيجية", "🤖 Strategic AI Consulting"))
 
-# عنوان الجزء السابع - يدعم المترجم t()
-st.header(t("🤖 المساعد الذكي: التوصيات الإستراتيجية", "🤖 AI Assistant: Strategic Recommendations"))
-
-# التحقق من وجود بيانات (p: التوقعات، d: التواريخ) لتجنب الأخطاء
+# التحقق من وجود بيانات التوقع
 if 'p' in locals() and len(p) > 0:
-    # --- 1. العمليات الحسابية والتحليل الذكي ---
-    peak_val = max(p)
+    # --- 1. العمليات الحسابية والتحليل الرقمي اللحظي ---
+    total_sales_val = np.sum(p)
+    peak_val = np.max(p)
     peak_date = d[np.argmax(p)]
     low_date = d[np.argmin(p)]
-    
-    # حساب معدل النمو المتوقع خلال فترة التوقع
     growth_rate = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # تهيئة أسماء الأيام للترجمة الديناميكية
     days_map = {
         'Arabic': ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"],
         'English': ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     }
     current_lang_days = days_map['Arabic'] if lang == "عربي" else days_map['English']
     peak_day_name = current_lang_days[peak_date.dayofweek]
-    low_day_name = current_lang_days[low_date.dayofweek]
 
-    # --- 2. عرض كروت التحليل (Insights Cards) ---
-    # استخدام st.info لضمان التوافق مع الـ Dark & Light Mode تلقائياً
+    # --- 2. عرض كروت التحليل السريعة (KPIs) ---
     c1, c2, c3 = st.columns(3)
-    
     with c1:
-        st.info(t(f"📅 **يوم الذروة:**\n\n{peak_day_name} ({peak_date.strftime('%d/%m')})", 
-                  f"📅 **Peak Day:**\n\n{peak_day_name} ({peak_date.strftime('%d/%m')})"))
-    
+        st.info(t(f"📅 **ذروة المبيعات:**\n\n{peak_day_name} ({peak_date.strftime('%d/%m')})", 
+                  f"📅 **Peak Sales:**\n\n{peak_day_name} ({peak_date.strftime('%d/%m')})"))
     with c2:
-        trend_label = "📈" if growth_rate > 0 else "📉"
-        st.info(t(f"{trend_label} **اتجاه الطلب:**\n\n{growth_rate:+.1f}% خلال الفترة", 
-                  f"{trend_label} **Demand Trend:**\n\n{growth_rate:+.1f}% during period"))
-        
+        st.info(t(f"💰 **إجمالي التوقع:**\n\n${total_sales_val:,.0f}", 
+                  f"💰 **Total Forecast:**\n\n${total_sales_val:,.0f}"))
     with c3:
-        st.info(t(f"💡 **أفضل فرصة:**\n\nزيادة المخزون قبل يوم {peak_day_name}", 
-                  f"💡 **Best Action:**\n\nStock up before {peak_day_name}"))
+        st.info(t(f"📊 **سيناريو السوق:**\n\n{scen}", 
+                  f"📊 **Market Scenario:**\n\n{scen}"))
 
-    # --- 3. قسم التوصيات التشغيلية (Action Plan) ---
-    st.markdown("### " + t("🛠️ خطة العمل المقترحة", "🛠️ Suggested Action Plan"))
+    # --- 3. بناء "البرومت" والاتصال بـ Gemini ---
+    # بنبعت لـ Gemini أرقام حقيقية عشان ميهبدش كلام عام
+    ai_prompt = f"""
+    بصفتك خبير استراتيجي في تجارة التجزئة، حلل هذه الأرقام لمتجر {selected_store}:
+    - أفق التنبؤ: {horizon} يوم.
+    - إجمالي المبيعات المتوقعة: ${total_sales_val:,.0f}.
+    - أعلى يوم مبيعات: {peak_day_name} بمبلغ ${peak_val:,.0f}.
+    - اتجاه النمو خلال الفترة: {growth_rate:+.1f}%.
+    - السيناريو المختار: {scen}.
     
-    with st.expander(t("إظهار التفاصيل التشغيلية", "Show Operational Details"), expanded=True):
-        col_text, col_icon = st.columns([3, 1])
-        
-        with col_text:
-            st.write(t(f"""
-            * **إدارة الموارد البشرية:** يُتوقع ضغط عالي يوم **{peak_day_name}**. ننصح بتكثيف عدد الموظفين في هذا اليوم.
-            * **الحملات التسويقية:** يوم **{low_day_name}** يظهر كأقل يوم في التوقعات؛ هو الوقت المثالي لإطلاق عروض "فلاش سيل" لتنشيط الحركة.
-            * **التزويد (Supply Chain):** تأكد من مراجعة الموردين قبل تاريخ **{peak_date.strftime('%Y-%m-%d')}** لتفادي أي عجز في الأصناف الأكثر مبيعاً.
-            """, f"""
-            * **HR Management:** High pressure expected on **{peak_day_name}**. We recommend increasing staff presence.
-            * **Marketing:** **{low_day_name}** is forecasted as the lowest sales day; it's the perfect time for "Flash Sales" to boost traffic.
-            * **Supply Chain:** Review suppliers before **{peak_date.strftime('%Y-%m-%d')}** to avoid stockouts of top-selling items.
-            """))
-        
-        with col_icon:
-            # مؤشر ثقة الذكاء الاصطناعي
-            st.metric(label=t("ثقة التحليل", "AI Confidence"), value="92%")
+    قدم 3 توصيات تنفيذية قصيرة جداً للمدير (مخزون، عمالة، تسويق).
+    اللغة المطلوبة: {lang}.
+    """
+
+    # زر توليد التوصيات عبر Gemini
+    if st.button(t("✨ توليد توصيات ذكية عبر Gemini", "✨ Generate AI Strategic Insights")):
+        with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
+            try:
+                # استدعاء الموديل (تأكد أن gemini_model معرف في أول الكود)
+                response = gemini_model.generate_content(ai_prompt)
+                
+                st.markdown("---")
+                st.markdown(f"### 🎯 {t('رؤية Gemini الاستراتيجية', 'Gemini Strategic Insight')}")
+                st.write(response.text)
+                st.success(t("تم التحليل بناءً على بياناتك الحالية.", "Analysis based on current data."))
+            except Exception as e:
+                st.error(t(f"❌ خطأ في الاتصال بـ AI: {e}", f"❌ AI Connection Error: {e}"))
 
 # ================== 🔗 الروابط المهنية وتذييل الصفحة (ENG.GODA EMAD Edition) ==================
 st.write("---")
@@ -560,14 +564,11 @@ with f1:
                   "👨‍💻 Developed by: **ENG.GODA EMAD**"))
 
 with f2:
-    # رابط لينكد إن الاحترافي الخاص بك
     st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>', unsafe_allow_html=True)
 
 with f3:
-    # رابط جيت هب الاحترافي الخاص بك
     st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>', unsafe_allow_html=True)
 
-# سطر الحقوق النهائي مع التاريخ الديناميكي
 st.caption("---")
 st.caption(t(f"تم تحديث هذا التقرير في: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | جميع الحقوق محفوظة لـ ENG.GODA EMAD 2026", 
               f"Report updated at: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | All rights reserved to ENG.GODA EMAD 2026"))
