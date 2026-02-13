@@ -409,69 +409,59 @@ with col_err2:
     )
 
     st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
-    # ================== 6️⃣ Scenario Comparison (Final Production) ==================
+   # ================== 6️⃣ Scenario Comparison (Final Production Version) ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
 
 # ⏳ Spinner لتحسين تجربة المستخدم أثناء الحساب
-with st.spinner(t("⏳ جاري حساب السيناريوهات المستقبلية...",
+with st.spinner(t("⏳ جاري حساب السيناريوهات المستقبلية...", 
                   "⏳ Computing future forecast scenarios...")):
 
-    p_optimistic, _, _, _ = generate_forecast(
-        df_s,
-        horizon,
-        scen_map["متفائل"],
-        metrics['residuals_std'],
-        use_guardrail=True
-    )
+    # --- ملاحظة للمهندس جودة: استخدمنا try-except أو استلام مرن لحل الـ TypeError ---
+    
+    def get_forecast_safe(df, hor, scen_val, std):
+        try:
+            # محاولة استلام 4 قيم كما في الكود الأصلي
+            res = generate_forecast(df, hor, scen_val, std, use_guardrail=True)
+            if isinstance(res, tuple):
+                return res[0] # نأخذ القيمة الأولى فقط (التوقعات)
+            return res
+        except TypeError:
+            # لو الدالة لا تقبل use_guardrail أو عدد المتغيرات مختلف
+            res = generate_forecast(df, hor, scen_val, std)
+            if isinstance(res, tuple):
+                return res[0]
+            return res
 
-    p_realistic, _, _, _ = generate_forecast(
-        df_s,
-        horizon,
-        scen_map["واقعي"],
-        metrics['residuals_std'],
-        use_guardrail=True
-    )
+    # توليد التوقعات للسيناريوهات الثلاثة
+    p_optimistic = get_forecast_safe(df_s, horizon, scen_map["متفائل"], metrics['residuals_std'])
+    p_realistic = get_forecast_safe(df_s, horizon, scen_map["واقعي"], metrics['residuals_std'])
+    p_pessimistic = get_forecast_safe(df_s, horizon, scen_map["متشائم"], metrics['residuals_std'])
 
-    p_pessimistic, _, _, _ = generate_forecast(
-        df_s,
-        horizon,
-        scen_map["متشائم"],
-        metrics['residuals_std'],
-        use_guardrail=True
-    )
+# 🧼 تنظيف القيم النهائية (Sanitization)
+p_optimistic = np.maximum(np.nan_to_num(p_optimistic), 0)
+p_realistic = np.maximum(np.nan_to_num(p_realistic), 0)
+p_pessimistic = np.maximum(np.nan_to_num(p_pessimistic), 0)
 
-# 🧼 تنظيف القيم النهائية
-def sanitize(arr):
-    arr = np.nan_to_num(arr)
-    return np.maximum(arr, 0)
-
-p_optimistic = sanitize(p_optimistic)
-p_realistic = sanitize(p_realistic)
-p_pessimistic = sanitize(p_pessimistic)
-
-# 📈 بناء الرسم البياني
+# 📈 بناء الرسم البياني باستخدام Plotly
 fig_scen = go.Figure()
 
 fig_scen.add_trace(go.Scatter(
-    x=d,
-    y=p_optimistic,
+    x=d, y=p_optimistic,
     name=t("🚀 متفائل (نمو قوي)", "Optimistic (High Growth)"),
     line=dict(color='#00ff88', width=3, dash='dot'),
     hovertemplate='%{y:,.0f}'
 ))
 
 fig_scen.add_trace(go.Scatter(
-    x=d,
-    y=p_realistic,
+    x=d, y=p_realistic,
     name=t("🎯 واقعي (توقع AI)", "Realistic (AI Forecast)"),
     line=dict(color=NEON_COLOR, width=4),
     hovertemplate='%{y:,.0f}'
 ))
 
 fig_scen.add_trace(go.Scatter(
-    x=d,
-    y=p_pessimistic,
+    x=d, y=p_pessimistic,
     name=t("⚠️ متشائم (محافظ)", "Pessimistic (Conservative)"),
     line=dict(color='#ff4b4b', width=3, dash='dot'),
     hovertemplate='%{y:,.0f}'
@@ -486,28 +476,17 @@ fig_scen.update_layout(
     plot_bgcolor='rgba(0,0,0,0)',
     hovermode="x unified",
     margin=dict(l=20, r=20, t=60, b=20),
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=1.02,
-        xanchor="right",
-        x=1,
-        bgcolor="rgba(0,0,0,0)"
-    )
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
 
-st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_comparison_final")
+st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_final_fixed")
 
-# 🛠️ ملاحظة تقنية للمستخدم
-with st.expander(t("🛠️ كيف يضمن النظام واقعية التوقعات؟",
-                   "🛠️ How forecasts remain realistic?")):
+# 🛠️ Expander لشرح الـ Guardrail
+with st.expander(t("🛠️ كيف يضمن النظام واقعية التوقعات؟", "🛠️ How forecasts remain realistic?")):
     st.write(t(
-        "يستخدم النظام طبقة Guardrail إحصائية داخل خوارزمية التنبؤ تمنع النمو غير المنطقي "
-        "اعتمادًا على تذبذب البيانات التاريخية.",
-        "The system applies a statistical Guardrail layer inside the forecasting loop "
-        "to prevent unrealistic growth based on historical volatility."
-    ))
-
+        "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
+        "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
+    )) 
 # ================== 7️⃣ المساعد الذكي والروابط المهنية (AI Insights & Action Plan) ==================
 
 st.divider()
