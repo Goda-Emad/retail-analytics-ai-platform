@@ -3,11 +3,18 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import joblib, os, time
-# تعديل بسيط في تعريف الموديل
+import google.generativeai as genai  # <--- السطر الناقص اللي هيحل الـ NameError
+
+# استدعاء الأنواع الإضافية لو محتاجها
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
-# جرب تعدل الـ configure لتحديد الـ API Version
+# إعداد الربط بالمفتاح الخاص بك
 genai.configure(api_key="AIzaSyAtRd8ixzF0fcYQG-xw1Rg0RhMl0u6BJn8")
+
+# تعريف الموديل ليكون جاهزاً للاستخدام
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+
+# استكمال باقي الاستدعاءات
 from utils import run_backtesting
 
 # ================== إعدادات الصفحة ==================
