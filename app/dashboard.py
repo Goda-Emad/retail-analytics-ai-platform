@@ -461,23 +461,24 @@ fig_scen.update_layout(
 
 # عرض المخطط في Streamlit مع key فريد لمنع التكرار
 st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_comparison_chart")
-# ================== 7️⃣ المساعد الذكي والتوصيات (AI Insights & Final Action) ==================
+# ================== 7️⃣ المساعد الذكي والروابط المهنية (AI Insights & Action Plan) ==================
 
 st.divider()
-# عنوان الجزء السابع
+
+# عنوان الجزء السابع - يدعم المترجم t()
 st.header(t("🤖 المساعد الذكي: التوصيات الإستراتيجية", "🤖 AI Assistant: Strategic Recommendations"))
 
-# --- 1. العمليات الحسابية والتحليل الذكي ---
-if len(p) > 0:
-    # تحديد القيم القصوى والدنيا
+# التحقق من وجود بيانات (p: التوقعات، d: التواريخ) لتجنب الأخطاء
+if 'p' in locals() and len(p) > 0:
+    # --- 1. العمليات الحسابية والتحليل الذكي ---
     peak_val = max(p)
     peak_date = d[np.argmax(p)]
     low_date = d[np.argmin(p)]
     
-    # حساب معدل النمو المتوقع (بين أول يوم وآخر يوم)
-    growth_rate = ((p[-1] - p[0]) / p[0]) * 100
+    # حساب معدل النمو المتوقع خلال فترة التوقع
+    growth_rate = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # تهيئة أسماء الأيام للترجمة
+    # تهيئة أسماء الأيام للترجمة الديناميكية
     days_map = {
         'Arabic': ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"],
         'English': ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -487,6 +488,7 @@ if len(p) > 0:
     low_day_name = current_lang_days[low_date.dayofweek]
 
     # --- 2. عرض كروت التحليل (Insights Cards) ---
+    # استخدام st.info لضمان التوافق مع الـ Dark & Light Mode تلقائياً
     c1, c2, c3 = st.columns(3)
     
     with c1:
@@ -520,13 +522,26 @@ if len(p) > 0:
             """))
         
         with col_icon:
-            # أيقونة توضيحية بسيطة أو مساحة لرسالة ختامية
+            # مؤشر ثقة الذكاء الاصطناعي
             st.metric(label=t("ثقة التحليل", "AI Confidence"), value="92%")
 
-# تذييل الصفحة
+# ================== 🔗 الروابط المهنية وتذييل الصفحة (ENG.GODA EMAD Edition) ==================
+st.write("---")
+f1, f2, f3 = st.columns([2, 1, 1])
+
+with f1:
+    st.markdown(t("👨‍💻 تم التطوير بواسطة: **ENG.GODA EMAD**", 
+                  "👨‍💻 Developed by: **ENG.GODA EMAD**"))
+
+with f2:
+    # رابط لينكد إن الاحترافي الخاص بك
+    st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>', unsafe_allow_html=True)
+
+with f3:
+    # رابط جيت هب الاحترافي الخاص بك
+    st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>', unsafe_allow_html=True)
+
+# سطر الحقوق النهائي مع التاريخ الديناميكي
 st.caption("---")
-st.caption(t(f"تم تحديث هذا التقرير في: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | جميع الحقوق محفوظة لـ سينيور جودة 2026", 
-              f"Report updated at: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | All rights reserved to Senior Gouda 2026"))
-
-
-    
+st.caption(t(f"تم تحديث هذا التقرير في: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | جميع الحقوق محفوظة لـ ENG.GODA EMAD 2026", 
+              f"Report updated at: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | All rights reserved to ENG.GODA EMAD 2026"))
