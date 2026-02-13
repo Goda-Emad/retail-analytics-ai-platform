@@ -494,81 +494,97 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-# ================== 7️⃣ المساعد الذكي الاستراتيجي (Powered by Gemini AI) ==================
-
+# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant - Professional Edition) ==================
 st.divider()
-st.header(t("🤖 استشارات الذكاء الاصطناعي الاستراتيجية", "🤖 Strategic AI Consulting"))
 
-# التحقق من وجود بيانات التوقع
+# عنوان احترافي مزدوج اللغة
+st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
+
 if 'p' in locals() and len(p) > 0:
-    # --- 1. العمليات الحسابية والتحليل الرقمي اللحظي ---
+    # --- 1. تحليل البيانات الرقمية اللحظية ---
     total_sales_val = np.sum(p)
     peak_val = np.max(p)
     peak_date = d[np.argmax(p)]
-    low_date = d[np.argmin(p)]
-    growth_rate = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
+    growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    days_map = {
-        'Arabic': ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"],
-        'English': ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    }
-    current_lang_days = days_map['Arabic'] if lang == "عربي" else days_map['English']
-    peak_day_name = current_lang_days[peak_date.dayofweek]
+    # تحضير أسماء الأيام للتقرير
+    days_ar = ["الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"]
+    days_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_name = days_ar[peak_date.dayofweek] if lang == "عربي" else days_en[peak_date.dayofweek]
 
-    # --- 2. عرض كروت التحليل السريعة (KPIs) ---
+    # --- 2. عرض كروت المؤشرات الحيوية ---
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.info(t(f"📅 **ذروة المبيعات:**\n\n{peak_day_name} ({peak_date.strftime('%d/%m')})", 
-                  f"📅 **Peak Sales:**\n\n{peak_day_name} ({peak_date.strftime('%d/%m')})"))
+        st.metric(t("إجمالي مبيعات الفترة", "Total Period Sales"), f"${total_sales_val:,.0f}")
     with c2:
-        st.info(t(f"💰 **إجمالي التوقع:**\n\n${total_sales_val:,.0f}", 
-                  f"💰 **Total Forecast:**\n\n${total_sales_val:,.0f}"))
+        st.metric(t("يوم الذروة", "Peak Sales Day"), day_name)
     with c3:
-        st.info(t(f"📊 **سيناريو السوق:**\n\n{scen}", 
-                  f"📊 **Market Scenario:**\n\n{scen}"))
+        st.metric(t("اتجاه النمو", "Growth Trend"), f"{growth_val:+.1f}%")
 
-    # --- 3. بناء "البرومت" والاتصال بـ Gemini ---
-    # بنبعت لـ Gemini أرقام حقيقية عشان ميهبدش كلام عام
-    ai_prompt = f"""
-    بصفتك خبير استراتيجي في تجارة التجزئة، حلل هذه الأرقام لمتجر {selected_store}:
-    - أفق التنبؤ: {horizon} يوم.
-    - إجمالي المبيعات المتوقعة: ${total_sales_val:,.0f}.
-    - أعلى يوم مبيعات: {peak_day_name} بمبلغ ${peak_val:,.0f}.
-    - اتجاه النمو خلال الفترة: {growth_rate:+.1f}%.
-    - السيناريو المختار: {scen}.
-    
-    قدم 3 توصيات تنفيذية قصيرة جداً للمدير (مخزون، عمالة، تسويق).
-    اللغة المطلوبة: {lang}.
-    """
+    st.markdown("---")
 
-    # زر توليد التوصيات عبر Gemini
-    if st.button(t("✨ توليد توصيات ذكية عبر Gemini", "✨ Generate AI Strategic Insights")):
+    # --- 3. محرك Gemini الاحترافي (نظام المحاولات المتعددة) ---
+    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_pro"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
-            try:
-                # استدعاء الموديل (تأكد أن gemini_model معرف في أول الكود)
-                response = gemini_model.generate_content(ai_prompt)
-                
-                st.markdown("---")
-                st.markdown(f"### 🎯 {t('رؤية Gemini الاستراتيجية', 'Gemini Strategic Insight')}")
-                st.write(response.text)
-                st.success(t("تم التحليل بناءً على بياناتك الحالية.", "Analysis based on current data."))
-            except Exception as e:
-                st.error(t(f"❌ خطأ في الاتصال بـ AI: {e}", f"❌ AI Connection Error: {e}"))
+            
+            # البرومت الهندسي (Prompt Engineering)
+            prompt = f"""
+            Act as a world-class Retail Strategy Consultant.
+            Data Context:
+            - Store: {selected_store}
+            - Forecast Window: {horizon} days
+            - Predicted Revenue: ${total_sales_val:,.0f}
+            - Highest Peak: ${peak_val:,.0f} on {day_name}
+            - Market Sentiment: {scen}
+            - Trend: {growth_val:+.1f}%
+
+            Task: Provide 3 ultra-short, actionable executive insights for (Inventory, Marketing, Staffing).
+            Language: {lang}
+            Tone: Professional, direct, and data-driven.
+            """
+
+            # قائمة المحاولات لضمان عدم حدوث Error 404
+            models_to_try = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']
+            success = False
+            
+            for model_name in models_to_try:
+                try:
+                    # محاولة الاتصال بالموديل
+                    m = genai.GenerativeModel(model_name)
+                    response = m.generate_content(prompt)
+                    
+                    # عرض النتيجة بتصميم جذاب
+                    st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
+                    st.success(f"**{t('تم التحليل باستخدام موديل', 'Analyzed using model')}: {model_name}**")
+                    st.info(response.text)
+                    
+                    # إضافة لمسة "خطة عمل" سريعة
+                    st.caption(t("💡 هذه التوصيات مبنية على خوارزميات التنبؤ المتقدمة لعام 2026.", 
+                                 "💡 These recommendations are based on 2026 advanced forecasting algorithms."))
+                    success = True
+                    break # نجحت المحاولة، اخرج من اللوب
+                except Exception as e:
+                    continue # فشل؟ جرب الموديل اللي بعده
+            
+            if not success:
+                st.error(t("❌ فشل الاتصال بخوادم Google AI. يرجى التأكد من صلاحية الـ API Key وإعدادات الإنترنت.", 
+                           "❌ Failed to connect to Google AI. Please check your API Key and internet settings."))
 
 # ================== 🔗 الروابط المهنية وتذييل الصفحة (ENG.GODA EMAD Edition) ==================
 st.write("---")
-f1, f2, f3 = st.columns([2, 1, 1])
+col_footer_1, col_footer_2, col_footer_3 = st.columns([2, 1, 1])
 
-with f1:
-    st.markdown(t("👨‍💻 تم التطوير بواسطة: **ENG.GODA EMAD**", 
-                  "👨‍💻 Developed by: **ENG.GODA EMAD**"))
+with col_footer_1:
+    st.markdown(t(f"👨‍💻 تم التطوير بواسطة: **ENG.GODA EMAD** | الإصدار {MODEL_VERSION}", 
+                  f"👨‍💻 Developed by: **ENG.GODA EMAD** | Version {MODEL_VERSION}"))
 
-with f2:
+with col_footer_2:
     st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn"></a>', unsafe_allow_html=True)
 
-with f3:
+with col_footer_3:
     st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>', unsafe_allow_html=True)
 
 st.caption("---")
-st.caption(t(f"تم تحديث هذا التقرير في: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | جميع الحقوق محفوظة لـ ENG.GODA EMAD 2026", 
-              f"Report updated at: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | All rights reserved to ENG.GODA EMAD 2026"))
+current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')
+st.caption(t(f"تم تحديث هذا التقرير في: {current_time} | جميع الحقوق محفوظة لـ ENG.GODA EMAD 2026", 
+              f"Report updated at: {current_time} | All rights reserved to ENG.GODA EMAD 2026"))
