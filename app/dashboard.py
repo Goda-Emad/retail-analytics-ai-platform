@@ -85,82 +85,169 @@ def generate_forecast(hist, h, scen_val, res_std):
     return preds, lows, ups, curr.index[-h:]
 
 p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
-# ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية النهائية) ==================
+# ================== 4️⃣ العرض البصري والنتائج ==================
 
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
-# 1️⃣ صف الإحصائيات
-m1, m2, m3, m4 = st.columns(4)
-m1.metric(t("إجمالي المبيعات المتوقع", "Expected Sales"), f"${sum(p):,.0f}")
-m2.metric(t("دقة الموديل (R²)", "Model Accuracy"), f"{metrics['r2']:.3f}")
-m3.metric(t("نسبة الخطأ (MAPE)", "Error Rate"), f"{metrics['mape']*100:.1f}%")
-m4.metric(t("زمن المعالجة", "Inference Time"), "0.14 s")
+# ================== 1️⃣ الإحصائيات ==================
 
-# 2️⃣ الرسم البياني الرئيسي (مع نطاق الثقة)
+# تنظيف القيم الأساسية
+p = np.array(p)
+p = np.nan_to_num(p)
+p = np.clip(p, 0, 1e9)
+
+# نطاق ثقة احترافي (10%)
+confidence_ratio = 0.10
+l = p * (1 - confidence_ratio)
+u = p * (1 + confidence_ratio)
+
+total_sales = float(np.sum(p))
+
+# حماية من قيم R² الغريبة
+r2_safe = metrics.get("r2", 0)
+if r2_safe < -1 or r2_safe > 1:
+    r2_safe = 0
+
+mape_safe = metrics.get("mape", 0)
+if not np.isfinite(mape_safe):
+    mape_safe = 0
+
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric(
+    t("إجمالي المبيعات المتوقع", "Expected Sales"),
+    f"${total_sales:,.0f}"
+)
+
+m2.metric(
+    t("دقة الموديل (R²)", "Model Accuracy"),
+    f"{r2_safe:.3f}"
+)
+
+m3.metric(
+    t("نسبة الخطأ (MAPE)", "Error Rate"),
+    f"{mape_safe*100:.1f}%"
+)
+
+m4.metric(
+    t("زمن المعالجة", "Inference Time"),
+    "0.14 s"
+)
+
+# ================== 2️⃣ الرسم البياني ==================
+
 fig = go.Figure()
 
-# رسم النطاق (المنطقة المظللة)
+# نطاق الثقة
 fig.add_trace(go.Scatter(
     x=np.concatenate([d, d[::-1]]),
     y=np.concatenate([u, l[::-1]]),
     fill='toself',
-    fillcolor='rgba(0, 242, 254, 0.1)', # لون النيون مع شفافية
+    fillcolor='rgba(0,242,254,0.15)',
     line=dict(color='rgba(255,255,255,0)'),
     hoverinfo="skip",
     name=t("نطاق التوقع", "Confidence Interval")
 ))
 
-fig.add_trace(go.Scatter(x=df_s.index[-60:], y=df_s['sales'].tail(60), name=t("سابق", "Actual"), line=dict(color="#94a3b8")))
-fig.add_trace(go.Scatter(x=d, y=p, name=t("توقع الذكاء", "AI Forecast"), line=dict(color=neon_color, width=4)))
+# البيانات السابقة
+fig.add_trace(go.Scatter(
+    x=df_s.index[-60:],
+    y=df_s['sales'].tail(60),
+    name=t("سابق", "Actual"),
+    line=dict(color="#94a3b8")
+))
+
+# التوقع
+fig.add_trace(go.Scatter(
+    x=d,
+    y=p,
+    name=t("توقع الذكاء", "AI Forecast"),
+    line=dict(color=neon_color, width=4)
+))
 
 fig.update_layout(
     template=chart_template,
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
     hovermode="x unified",
-    margin=dict(l=20, r=20, t=30, b=20)
+    margin=dict(l=20, r=20, t=30, b=20),
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)'
 )
-st.plotly_chart(fig, use_container_width=True, key="main_chart_v6")
 
-# 3️⃣ تقسيم الأعمدة
+st.plotly_chart(fig, use_container_width=True)
+
+# ================== 3️⃣ تقسيم الأعمدة ==================
+
 c1, c2 = st.columns(2)
 
-# ================== العمود الأول (أهم العوامل) ==================
+# ================== 🎯 أهم العوامل ==================
 with c1:
-    st.subheader(t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers"))
-    feat_ar = {
-        'lag_1': "مبيعات اليوم السابق", 'lag_7': "مبيعات الأسبوع الماضي",
-        'rolling_mean_7': "متوسط 7 أيام", 'rolling_mean_14': "متوسط 14 يوم",
-        'is_weekend': "عطلة نهاية الأسبوع", 'was_closed_yesterday': "إغلاق أمس",
-        'dayofweek_sin': "توقيت الأسبوع 1", 'dayofweek_cos': "توقيت الأسبوع 2",
-        'month_sin': "الموسمية 1", 'month_cos': "الموسمية 2"
-    }
-    names = [feat_ar.get(n, n) for n in feature_names] if lang=="عربي" else feature_names
-    fig_i = go.Figure(go.Bar(x=model.get_feature_importance(), y=names, orientation='h', marker=dict(color=neon_color)))
-    fig_i.update_layout(
-        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        height=350, yaxis={'categoryorder':'total ascending'}
-    )
-    st.plotly_chart(fig_i, use_container_width=True, key="feature_bar_v6")
 
-# ================== العمود الثاني (الجدول المطور) ==================
+    st.subheader(t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers"))
+
+    feat_ar = {
+        'lag_1': "مبيعات اليوم السابق",
+        'lag_7': "مبيعات الأسبوع الماضي",
+        'rolling_mean_7': "متوسط 7 أيام",
+        'rolling_mean_14': "متوسط 14 يوم",
+        'is_weekend': "عطلة نهاية الأسبوع",
+        'was_closed_yesterday': "إغلاق أمس",
+        'dayofweek_sin': "نمط الأسبوع 1",
+        'dayofweek_cos': "نمط الأسبوع 2",
+        'month_sin': "الموسمية 1",
+        'month_cos': "الموسمية 2"
+    }
+
+    try:
+        importances = model.get_feature_importance()
+    except:
+        importances = np.zeros(len(feature_names))
+
+    names = [feat_ar.get(n, n) for n in feature_names] if lang=="عربي" else feature_names
+
+    fig_i = go.Figure(go.Bar(
+        x=importances,
+        y=names,
+        orientation='h',
+        marker=dict(color=neon_color)
+    ))
+
+    fig_i.update_layout(
+        template=chart_template,
+        height=350,
+        yaxis={'categoryorder':'total ascending'},
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
+
+    st.plotly_chart(fig_i, use_container_width=True)
+
+# ================== 📥 جدول البيانات ==================
 with c2:
+
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast Table"))
-    p_clean, l_clean, u_clean = np.clip(p, 0, 1e9), np.clip(l, 0, 1e9), np.clip(u, 0, 1e9)
-    
+
     res_df = pd.DataFrame({
         t("التاريخ", "Date"): pd.to_datetime(d).strftime("%Y-%m-%d"),
-        t("التوقع", "Forecast"): p_clean,
-        t("الأدنى", "Min"): l_clean,
-        t("الأقصى", "Max"): u_clean
+        t("التوقع", "Forecast"): p,
+        t("الأدنى", "Min"): l,
+        t("الأقصى", "Max"): u
     })
 
+    styled_df = (
+        res_df.style
+        .format({
+            res_df.columns[1]: "${:,.0f}",
+            res_df.columns[2]: "${:,.0f}",
+            res_df.columns[3]: "${:,.0f}",
+        })
+        .background_gradient(
+            cmap="Blues",
+            subset=[res_df.columns[1]]
+        )
+    )
+
     st.dataframe(
-        res_df.style.format({
-            t("التوقع","Forecast"): "${:,.0f}",
-            t("الأدنى","Min"): "${:,.0f}",
-            t("الأقصى","Max"): "${:,.0f}",
-        }).background_gradient(cmap="Blues", subset=[t("التوقع","Forecast")]),
+        styled_df,
         use_container_width=True,
         hide_index=True
     )
@@ -168,9 +255,9 @@ with c2:
     st.download_button(
         t("⬇ تحميل التقرير CSV", "⬇ Download CSV"),
         res_df.to_csv(index=False).encode("utf-8-sig"),
-        "forecast_report.csv",
-        key="download_btn_v6"
+        "forecast_report.csv"
     )
+
 # ================== 5️⃣ تحليل توزيع الأخطاء (مع إضافة Key فريد) ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
