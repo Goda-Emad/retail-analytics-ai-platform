@@ -196,3 +196,4 @@ with st.expander("📝 معلومات النظام"):
     st.write(f"**Version:** {MODEL_VERSION}")
     st.write(f"**Backtesting Records:** {metrics['data_points']}")
     st.write(f"**Residual Std Dev:** {metrics['residuals_std']:.2f}")
+
