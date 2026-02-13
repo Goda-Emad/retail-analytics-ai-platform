@@ -127,82 +127,79 @@ def get_metrics(_d, _f, _s, _m):
 metrics = get_metrics(df_s, feature_names, scaler, model)
 
 # ================== 3️⃣ محرك التوقع ==================
-def generate_forecast(hist, horizon, scen_val, res_std):
+def generate_forecast(hist, h, scen_val, res_std):
     """
-    توليد توقعات المبيعات لعدد محدد من الأيام مع حدود الثقة 95%.
-
-    Parameters
-    ----------
-    hist : pd.DataFrame
-        البيانات التاريخية للمبيعات مع عمود 'sales'.
-    horizon : int
-        عدد أيام التوقع.
-    scen_val : float
-        معامل السيناريو (متشائم 0.85، واقعي 1.0، متفائل 1.15).
-    res_std : float
-        الانحراف المعياري لبواقي النموذج لتحديد الثقة في التوقعات.
-
-    Returns
-    -------
-    preds : list
-        قائمة التوقعات اليومية.
-    lows : list
-        الحد الأدنى للتوقع (95% CI).
-    ups : list
-        الحد الأعلى للتوقع (95% CI).
-    forecast_index : pd.DatetimeIndex
-        تواريخ الأيام المتوقعة.
+    توليد توقعات المبيعات المستقبلية مع نطاق ثقة.
+    hist       : DataFrame تاريخي يحتوي على عمود 'sales'
+    h          : عدد أيام التوقع
+    scen_val   : معامل السيناريو (متشائم/واقعي/متفائل)
+    res_std    : الانحراف المعياري للبواقي (Residual Std)
     """
     np.random.seed(42)
-    
     preds, lows, ups = [], [], []
+
+    # تأكد من وجود العمود 'sales'
+    if 'sales' not in hist.columns:
+        raise ValueError("'sales' column is missing in the historical data!")
+
     curr = hist[['sales']].copy().fillna(0)
 
-    for i in range(horizon):
-        # تحديد اليوم التالي
-        next_day = curr.index[-1] + pd.Timedelta(days=1)
-        
-        # إنشاء الخصائص للنموذج
+    for i in range(h):
+        nxt = curr.index[-1] + pd.Timedelta(days=1)
+
+        # تجهيز الميزات المطلوبة للتنبؤ
         feats = {
-            'dayofweek_sin': np.sin(2 * np.pi * next_day.dayofweek / 7),
-            'dayofweek_cos': np.cos(2 * np.pi * next_day.dayofweek / 7),
-            'month_sin': np.sin(2 * np.pi * (next_day.month - 1) / 12),
-            'month_cos': np.cos(2 * np.pi * (next_day.month - 1) / 12),
+            'dayofweek_sin': np.sin(2 * np.pi * nxt.dayofweek / 7),
+            'dayofweek_cos': np.cos(2 * np.pi * nxt.dayofweek / 7),
+            'month_sin': np.sin(2 * np.pi * (nxt.month - 1) / 12),
+            'month_cos': np.cos(2 * np.pi * (nxt.month - 1) / 12),
             'lag_1': float(curr['sales'].iloc[-1]),
             'lag_7': float(curr['sales'].iloc[-7] if len(curr) >= 7 else curr['sales'].mean()),
             'rolling_mean_7': float(curr['sales'].tail(7).mean()),
             'rolling_mean_14': float(curr['sales'].tail(14).mean()),
-            'is_weekend': 1 if next_day.dayofweek >= 5 else 0,
+            'is_weekend': 1 if nxt.dayofweek >= 5 else 0,
             'was_closed_yesterday': 1 if curr['sales'].iloc[-1] <= 0 else 0
         }
 
-        # تحويل الخصائص إلى DataFrame بالترتيب الصحيح
+        # تحويل للـ DataFrame مع ترتيب الأعمدة
         X = pd.DataFrame([feats])[feature_names]
 
-        # توقع النموذج وتحويل اللوغاريتم العكسي، مع Clip لمنع القيم الشاذة
-        pred = np.expm1(np.clip(model.predict(scaler.transform(X))[0], -10, 15)) * scen_val
-        
-        # حساب حدود الثقة 95%
-        ci_margin = 1.96 * res_std * np.sqrt(i + 1)
-        
-        # تخزين النتائج
-        preds.append(float(pred))
-        lows.append(float(max(0, pred - ci_margin)))
-        ups.append(float(pred + ci_margin))
-        
-        # تحديث البيانات بالمبيعات المتوقعة لليوم التالي
-        curr.loc[next_day] = [pred]
+        # التنبؤ مع حماية القيم
+        try:
+            p = np.expm1(np.clip(model.predict(scaler.transform(X))[0], -10, 15)) * scen_val
+        except Exception as e:
+            st.warning(f"⚠ خطأ أثناء التنبؤ في اليوم {nxt.date()}: {e}")
+            p = 0
 
-    # إرجاع القيم مع تواريخ الأيام المتوقعة
-    return preds, lows, ups, curr.index[-horizon:]
+        # نطاق الثقة 95%
+        b = 1.96 * res_std * np.sqrt(i + 1)
 
-# توليد التوقعات باستخدام البيانات المختارة والسيناريو
-preds, lows, ups, forecast_dates = generate_forecast(
-    hist=df_s,
-    horizon=horizon,
-    scen_val=scen_map[scen],
-    res_std=metrics['residuals_std']
-)
+        preds.append(float(p))
+        lows.append(float(max(0, p - b)))
+        ups.append(float(p + b))
+
+        # تحديث البيانات التاريخية للتنبؤ اليوم التالي
+        curr.loc[nxt] = [p]
+
+    return np.array(preds), np.array(lows), np.array(ups), curr.index[-h:]
+
+# ================== استدعاء التنبؤ مع حماية NameError ==================
+try:
+    p, l, u, d = generate_forecast(
+        df_s,
+        horizon,
+        scen_map.get(scen, 1.0),
+        metrics.get('residuals_std', 1.0)
+    )
+
+    # تنظيف القيم من NaN و infinite
+    p = np.nan_to_num(p, nan=0.0, posinf=1e9, neginf=0.0)
+    l = np.nan_to_num(l, nan=0.0, posinf=1e9, neginf=0.0)
+    u = np.nan_to_num(u, nan=0.0, posinf=1e9, neginf=0.0)
+
+except Exception as e:
+    st.error(f"❌ خطأ أثناء توليد التوقعات: {e}")
+    p, l, u, d = np.array([]), np.array([]), np.array([]), np.array([])
 
 # ================== 4️⃣ العرض البصري والنتائج ==================
 
