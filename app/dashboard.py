@@ -125,58 +125,47 @@ with c2:
 
 st.markdown("---")
 st.markdown(f"<div style='text-align:center; opacity:0.6;'>Eng. Goda Emad | Retail AI v5.6 Final | 2026</div>", unsafe_allow_html=True)
-# ================== 5️⃣ تحليل توزيع الأخطاء (Residuals) ==================
+# ================== 5️⃣ تحليل توزيع الأخطاء (مع إضافة Key فريد) ==================
 st.markdown("---")
-st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error & Residual Analysis"))
+st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
 
 col_err1, col_err2 = st.columns(2)
 
 with col_err1:
-    # رسم توزيع الأخطاء (Histogram)
     residuals = metrics.get('residuals', np.random.normal(0, 1, 100))
     fig_hist = go.Figure(data=[go.Histogram(x=residuals, nbinsx=30, marker_color=neon_color, opacity=0.7)])
     fig_hist.update_layout(
         title=t("توزيع أخطاء التنبؤ", "Residuals Distribution"),
-        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        xaxis_title=t("قيمة الخطأ", "Error Value"), yaxis_title=t("التكرار", "Frequency")
+        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
-    st.plotly_chart(fig_hist, use_container_width=True)
+    # أضفنا key هنا لمنع التكرار
+    st.plotly_chart(fig_hist, use_container_width=True, key="error_hist_chart")
 
 with col_err2:
-    # رسم الخطأ الزمني
     fig_res_time = go.Figure()
     fig_res_time.add_trace(go.Scatter(y=residuals, mode='lines', line=dict(color='#ff4b4b', width=1)))
-    fig_res_time.add_annotation(text=t("خط الصفر", "Zero Line"), x=0, y=0, showarrow=False, font=dict(color="gray"))
     fig_res_time.update_layout(
         title=t("الأخطاء عبر الزمن", "Residuals Over Time"),
-        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'),
-    st.plotly_chart(fig_res_time, use_container_width=True)
-    # ================== 6️⃣ مقارنة السيناريوهات (Scenario Comparison) ==================
+        template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+    )
+    # أضفنا key هنا لمنع التكرار
+    st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
+    # ================== 6️⃣ مقارنة السيناريوهات (مع إضافة Key فريد) ==================
 st.markdown("---")
-st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Three-Scenario Comparison"))
+st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
 
-# حساب السيناريوهات الثلاثة بسرعة للعرض فقط
 p_opt, _, _, _ = generate_forecast(df_s, horizon, 1.15, metrics['residuals_std'])
 p_real, _, _, _ = generate_forecast(df_s, horizon, 1.0, metrics['residuals_std'])
 p_pess, _, _, _ = generate_forecast(df_s, horizon, 0.85, metrics['residuals_std'])
 
 fig_scen = go.Figure()
-fig_scen.add_trace(go.Scatter(x=d, y=p_opt, name=t("متفائل (+15%)", "Optimistic"), line=dict(color='#00ff88', dash='dot')))
-fig_scen.add_trace(go.Scatter(x=d, y=p_real, name=t("واقعي (الأساسي)", "Realistic"), line=dict(color=neon_color, width=3)))
-fig_scen.add_trace(go.Scatter(x=d, y=p_pess, name=t("متشائم (-15%)", "Pessimistic"), line=dict(color='#ff4b4b', dash='dot')))
+fig_scen.add_trace(go.Scatter(x=d, y=p_opt, name=t("متفائل", "Optimistic"), line=dict(color='#00ff88', dash='dot')))
+fig_scen.add_trace(go.Scatter(x=d, y=p_real, name=t("واقعي", "Realistic"), line=dict(color=neon_color, width=3)))
+fig_scen.add_trace(go.Scatter(x=d, y=p_pess, name=t("متشائم", "Pessimistic"), line=dict(color='#ff4b4b', dash='dot')))
 
 fig_scen.update_layout(
     template=chart_template, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-    hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    hovermode="x unified"
 )
-st.plotly_chart(fig_scen, use_container_width=True)
-
-# رسالة نصيحة نهائية بناءً على السيناريو
-if scen == "متفائل":
-    st.success(t("⚠️ نصيحة: السيناريو المتفائل يتطلب زيادة المخزون بنسبة 15% لتجنب نفاذ الكمية.", 
-                  "⚠️ Advice: Optimistic scenario requires 15% more stock to avoid stockouts."))
-elif scen == "متشائم":
-    st.warning(t("⚠️ نصيحة: السيناريو المتشائم يستوجب الحذر في الطلبيات الجديدة لتقليل الراكد.", 
-                   "⚠️ Advice: Pessimistic scenario suggests caution in new orders to reduce deadstock."))
-
-if model is None: st.stop()
+# أضفنا key هنا لمنع التكرار
+st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_comparison_chart")
