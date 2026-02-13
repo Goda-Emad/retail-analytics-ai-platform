@@ -74,38 +74,41 @@ with st.spinner("⏳ جاري تحميل النموذج والبيانات..."):
 if model is None:
     st.stop()
 
+
 # ================== 2️⃣ السايدبار والمعالجة ==================
 # اختيار اللغة
 lang = st.sidebar.selectbox("🌐 اللغة / Language", ["عربي", "English"])
-t = lambda ar, en: ar if lang == "عربي" else en  # دالة بسيطة للترجمة حسب اختيار المستخدم
+t = lambda ar, en: ar if lang == "عربي" else en
 
-# رفع ملف CSV من المستخدم (اختياري)
-uploaded = st.sidebar.file_uploader(t("رفع ملف CSV", "Upload CSV"), type="csv")
-if uploaded:
-    try:
-        df_active = pd.read_csv(uploaded)
-        st.sidebar.success(t("تم تحميل الملف بنجاح ✅", "File uploaded successfully ✅"))
-    except Exception as e:
-        st.sidebar.error(t(f"خطأ في قراءة الملف: {e}", f"Error reading file: {e}"))
-        df_active = df_raw.copy()
+# رفع ملف CSV
+uploaded_file = st.sidebar.file_uploader(t("رفع ملف CSV", "Upload CSV"), type="csv")
+
+# تحميل البيانات النشطة
+if uploaded_file:
+    df_active = pd.read_csv(uploaded_file)
 else:
-    df_active = df_raw.copy()
+    df_active = df_raw.copy()  # df_raw تم تحميله في الجزء الأول
 
 # تنظيف أسماء الأعمدة
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
-# تحويل العمود 'date' إلى datetime وترتيب البيانات
+# تحويل العمود 'date' لتواريخ وترتيب البيانات
 if 'date' in df_active.columns:
     df_active['date'] = pd.to_datetime(df_active['date'], errors='coerce')
+    df_active = df_active.dropna(subset=['date'])
     df_active = df_active.sort_values('date').set_index('date')
 
-# اختيار المتجر
+# قائمة المتاجر
 store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
 selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list)
+
+# فلترة البيانات حسب المتجر
 df_s = df_active[df_active['store_id'] == selected_store] if 'store_id' in df_active.columns else df_active
 
-# إعدادات التوقع
+# اختيار عدد أيام التوقع
 horizon = st.sidebar.slider(t("أيام التوقع", "Days"), min_value=1, max_value=60, value=14)
+
+# السيناريوهات
 scen_map = {"متشائم": 0.85, "واقعي": 1.0, "متفائل": 1.15}
 scen = st.sidebar.select_slider(
     t("السيناريو", "Scenario"),
@@ -113,17 +116,15 @@ scen = st.sidebar.select_slider(
     value="واقعي"
 )
 
-# ================== حساب المقاييس باستخدام Backtesting ==================
-@st.cache_data
-def get_metrics(df, feature_names, scaler, model):
+# ================== حساب Metrics مع حماية caching ==================
+@st.cache_data(show_spinner=False, allow_output_mutation=True)
+def get_metrics(_d, _f, _s, _m):
     """
-    دالة لحساب مقاييس الأداء والتنبؤات باستخدام النموذج.
+    حساب مقاييس النموذج (Backtesting) مع حماية من مشاكل UnhashableParamError.
     """
-    return run_backtesting(df, feature_names, scaler, model)
+    return run_backtesting(_d, _f, _s, _m)
 
-# حساب المقاييس للبيانات المحددة
-with st.spinner(t("⏳ حساب المقاييس...", "Calculating metrics...")):
-    metrics = get_metrics(df_s, feature_names, scaler, model)
+metrics = get_metrics(df_s, feature_names, scaler, model)
 
 # ================== 3️⃣ محرك التوقع ==================
 def generate_forecast(hist, horizon, scen_val, res_std):
