@@ -1,20 +1,18 @@
-# dashboard_v5_4.py
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from datetime import timedelta
 import joblib
-import os
 import time
+import os
 from utils import run_backtesting
 
 # ================== 0️⃣ Config ==================
-MODEL_VERSION = "v5.4 (Full Multi-Horizon)"
-st.set_page_config(page_title=f"Retail AI {MODEL_VERSION}",
-                   layout="wide", page_icon="📈")
+MODEL_VERSION = "v5.4 (Multi-Horizon & Bilingual)"
+st.set_page_config(page_title=f"Retail AI {MODEL_VERSION}", layout="wide", page_icon="📈")
 
-# ================== 1️⃣ Load Assets ==================
+# ================== 1️⃣ Assets Loader ==================
 @st.cache_resource
 def load_assets():
     try:
@@ -41,45 +39,63 @@ def load_assets():
 model, scaler, feature_names, df_raw = load_assets()
 if model is None: st.stop()
 
-# ================== 2️⃣ Sidebar ==================
-st.sidebar.title(f"🚀 Retail AI Control Center {MODEL_VERSION}")
-theme_choice = st.sidebar.radio("🌗 Theme", ["Light", "Dark"])
-st.markdown(f"<style>body {{background-color: {'#f9f9f9' if theme_choice=='Light' else '#0f1117'}};</style>", unsafe_allow_html=True)
+# ================== 2️⃣ Language & Theme ==================
+lang_choice = st.sidebar.selectbox("🌐 اللغة / Language", ["English", "عربي"])
+theme_choice = st.sidebar.selectbox("🎨 Theme", ["Light", "Dark"])
+st.markdown(f"<style>body {{ background-color: {'#f9f9f9' if theme_choice=='Light' else '#0f1117'}; }}</style>", unsafe_allow_html=True)
 
-uploaded_file = st.sidebar.file_uploader("📂 Upload CSV", type="csv")
-df_active = pd.read_csv(uploaded_file) if uploaded_file else df_raw.copy()
-df_active.columns = [c.lower().strip() for c in df_active.columns]
-if 'date' in df_active.columns:
-    df_active['date'] = pd.to_datetime(df_active['date'])
-    df_active = df_active.sort_values('date').set_index('date')
+# Translation dictionary
+texts = {
+    "English": {
+        "upload": "📂 Upload CSV",
+        "select_store": "🏪 Select Store",
+        "forecast_days": "Forecast Days",
+        "scenario": "Scenario",
+        "market_vol": "Market Volatility",
+        "expected_sales": "Expected Total Sales",
+        "r2_score": "Prediction Accuracy (R²)",
+        "mape": "Prediction Error (MAPE)",
+        "inference": "Inference Time",
+        "feature_imp": "🎯 Feature Importance",
+        "export_preview": "📥 Export Preview",
+        "system_diag": "📝 System Diagnostics",
+        "safe_mode": "Safe Mode Active"
+    },
+    "عربي": {
+        "upload": "📂 رفع ملف CSV",
+        "select_store": "🏪 اختر المتجر",
+        "forecast_days": "عدد أيام التوقع",
+        "scenario": "السيناريو",
+        "market_vol": "تقلب السوق",
+        "expected_sales": "إجمالي المبيعات المتوقع",
+        "r2_score": "دقة التنبؤ (R²)",
+        "mape": "خطأ التنبؤ (MAPE)",
+        "inference": "زمن المعالجة",
+        "feature_imp": "🎯 أهم الميزات",
+        "export_preview": "📥 معاينة التصدير",
+        "system_diag": "📝 تشخيص النظام",
+        "safe_mode": "الوضع الآمن مفعل"
+    }
+}
 
-stores = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
-selected_store = st.sidebar.selectbox("🏪 Select Store", stores)
-df_store = df_active[df_active['store_id'] == selected_store] if 'store_id' in df_active.columns else df_active
+t = texts[lang_choice]
 
-if len(df_store) < 30:
-    st.error("⚠️ بيانات غير كافية للتحليل (نحتاج 30 يوم على الأقل).")
-    st.stop()
+# ================== 3️⃣ Core Functions ==================
+def process_upload(file):
+    uploaded_df = pd.read_csv(file)
+    uploaded_df.columns = [c.lower().strip() for c in uploaded_df.columns]
+    if 'date' in uploaded_df.columns:
+        uploaded_df['date'] = pd.to_datetime(uploaded_df['date'])
+        uploaded_df = uploaded_df.sort_values('date').set_index('date')
+    return uploaded_df
 
-# Multi-Horizon Selection
-horizons = st.sidebar.multiselect("⏱️ Select Forecast Horizons (days)", options=[7,14,30], default=[7,14,30])
-scenario = st.sidebar.select_slider("Scenario", options=["متشائم","واقعي","متفائل"], value="واقعي")
-scenario_map = {"متشائم":0.85, "واقعي":1.0, "متفائل":1.15}
-noise = st.sidebar.slider("Market Volatility", 0.0, 0.2, 0.05)
-
-# ================== 3️⃣ Cached Backtesting ==================
-@st.cache_data
-def cached_backtesting(_df, _features, _scaler, _model):
-    return run_backtesting(_df, _features, _scaler, _model)
-
-metrics = cached_backtesting(df_store, feature_names, scaler, model)
-
-# ================== 4️⃣ Forecast Function ==================
-def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_std):
+def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_std, scaler, model, feature_names):
+    np.random.seed(42)
     preds, lowers, uppers = [], [], []
-    current_df = history_df[['sales']].copy().replace([np.inf,-np.inf], np.nan).fillna(0)
-    num_cols = ['lag_1','lag_7','rolling_mean_7','rolling_mean_14']
-    MAX_SALES = max(100000, current_df['sales'].max()*3)
+    current_df = history_df[['sales']].copy().replace([np.inf, -np.inf], np.nan).fillna(0)
+    num_cols = ['lag_1', 'lag_7', 'rolling_mean_7', 'rolling_mean_14']
+    MAX_SALES = max(100000, current_df['sales'].max() * 3)
+
     for i in range(horizon):
         next_date = current_df.index[-1] + pd.Timedelta(days=1)
         feat_dict = {
@@ -91,102 +107,132 @@ def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_st
             'lag_7': float(current_df['sales'].iloc[-7] if len(current_df)>=7 else current_df['sales'].mean()),
             'rolling_mean_7': float(current_df['sales'].tail(7).mean()),
             'rolling_mean_14': float(current_df['sales'].tail(14).mean()),
-            'is_weekend': 1 if next_date.dayofweek>=5 else 0,
-            'was_closed_yesterday':1 if current_df['sales'].iloc[-1]<=0 else 0
+            'is_weekend': 1 if next_date.dayofweek >= 5 else 0,
+            'was_closed_yesterday': 1 if current_df['sales'].iloc[-1] <= 0 else 0
         }
-        X_df = pd.DataFrame([feat_dict])[feature_names].replace([np.inf,-np.inf],0).fillna(0)
+        X_df = pd.DataFrame([feat_dict])[feature_names].replace([np.inf, -np.inf], np.nan).fillna(0)
         try:
             X_df[num_cols] = scaler.transform(X_df[num_cols])
         except:
             X_df_scaled = scaler.transform(X_df)
             X_df = pd.DataFrame(X_df_scaled, columns=feature_names, index=X_df.index)
         pred_log = model.predict(X_df)[0]
-        pred_log = np.clip(pred_log,-10,15)
+        pred_log = np.clip(pred_log, -10, 15)
         pred_val = np.expm1(pred_log) * scenario_val
-        pred_val *= (1+np.random.normal(0,noise_val))
-        pred_val = np.clip(pred_val,0,MAX_SALES)
-        preds.append(float(pred_val))
-        bound = 1.96*residuals_std*np.sqrt(i+1)
-        lowers.append(max(0,pred_val-bound))
-        uppers.append(min(MAX_SALES*1.2,pred_val+bound))
+        pred_val *= (1 + np.random.normal(0, noise_val))
+        pred_val = np.clip(pred_val, 0, MAX_SALES)
+        pred_val = float(pred_val)
+        bound = 1.96 * residuals_std * np.sqrt(i + 1)
+        preds.append(pred_val)
+        lowers.append(max(0, pred_val - bound))
+        uppers.append(min(MAX_SALES*1.2, pred_val + bound))
         current_df.loc[next_date] = [pred_val]
     return preds, lowers, uppers, current_df.index[-horizon:]
 
-# ================== 5️⃣ Run Forecast for All Horizons ==================
+# ================== 4️⃣ Sidebar ==================
+st.sidebar.title(f"🚀 AI Retail Core {MODEL_VERSION}")
+uploaded_file = st.sidebar.file_uploader(t["upload"], type="csv")
+df_active = process_upload(uploaded_file) if uploaded_file else df_raw.copy()
+stores = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
+selected_store = st.sidebar.selectbox(t["select_store"], stores)
+df_store = df_active[df_active['store_id'] == selected_store] if 'store_id' in df_active.columns else df_active
+if len(df_store) < 30:
+    st.error("⚠️ بيانات غير كافية للتحليل (نحتاج 30 يوم عمل على الأقل).")
+    st.stop()
+
+horizon_days = st.sidebar.multiselect(t["forecast_days"], options=[7,14,30,60,90], default=[14,30])
+scenario = st.sidebar.select_slider(t["scenario"], options=["متشائم","واقعي","متفائل"], value="واقعي")
+scenario_map = {"متشائم":0.85,"واقعي":1.0,"متفائل":1.15}
+noise = st.sidebar.slider(t["market_vol"], 0.0, 0.2, 0.05)
+
+# ================== 5️⃣ Backtesting ==================
+@st.cache_data
+def cached_backtesting(_df, _features, _scaler, _model):
+    return run_backtesting(_df, _features, _scaler, _model)
+
+metrics = cached_backtesting(df_store, feature_names, scaler, model)
+
+# ================== 6️⃣ Forecast Execution ==================
 all_forecasts = {}
-for h in horizons:
-    preds, lowers, uppers, dates = generate_forecast(df_store,h,scenario_map[scenario],noise,metrics['residuals_std'])
-    all_forecasts[h] = {"preds":preds,"lowers":lowers,"uppers":uppers,"dates":dates}
+for h in horizon_days:
+    preds, lowers, uppers, forecast_dates = generate_forecast(
+        df_store, h, scenario_map[scenario], noise, metrics['residuals_std'],
+        scaler, model, feature_names
+    )
+    all_forecasts[h] = {"preds":preds,"lowers":lowers,"uppers":uppers,"dates":forecast_dates}
 
-# ================== 6️⃣ Metrics Display ==================
-st.title(f"📊 Retail Forecast Dashboard | {selected_store}")
-for h in horizons:
-    total_sales = np.sum(all_forecasts[h]['preds'])
-    st.metric(label=f"⏱️ إجمالي المبيعات المتوقع ({h} يوم)", value=f"${total_sales:,.0f}")
+# ================== 7️⃣ Dashboard ==================
+st.title(f"📈 Retail Forecast | {selected_store}")
 
-st.metric(label="📈 دقة التنبؤ (R²)", value=f"{metrics['r2']:.3f}")
-st.metric(label="⚠️ خطأ التنبؤ (MAPE)", value=f"{metrics['mape']*100:.2f}%")
-st.metric(label="⏱️ زمن المعالجة", value=f"{metrics['execution_time']*1000:.1f} ms")
+# Metrics cards (Multi-Horizon)
+cols = st.columns(len(horizon_days))
+for idx,h in enumerate(horizon_days):
+    total_sales = np.sum(all_forecasts[h]["preds"])
+    cols[idx].metric(f"{t['expected_sales']} ({h} يوم)", f"${total_sales:,.0f}")
 
-# ================== 7️⃣ Multi-Horizon Chart ==================
+st.subheader(t["r2_score"])
+st.write(f"{metrics['r2']:.3f}")
+st.subheader(t["mape"])
+st.write(f"{metrics['mape']*100:.2f}%")
+st.subheader(t["inference"])
+st.write(f"{0.001*metrics['execution_time']:.2f} s")  # ms -> s
+
+# ================== 8️⃣ Forecast Chart ==================
 fig = go.Figure()
-colors = ["#3b82f6","#f97316","#16a34a"]
-for idx,h in enumerate(horizons):
-    fig.add_trace(go.Scatter(x=all_forecasts[h]['dates'], y=all_forecasts[h]['preds'],
-                             name=f"{h}-day Forecast", line=dict(color=colors[idx%len(colors)],width=4)))
+for h in horizon_days:
     fig.add_trace(go.Scatter(
-        x=np.concatenate([all_forecasts[h]['dates'],all_forecasts[h]['dates'][::-1]]),
-        y=np.concatenate([all_forecasts[h]['uppers'],all_forecasts[h]['lowers'][::-1]]),
-        fill='toself', fillcolor='rgba(59,130,246,0.15)', line=dict(color='rgba(255,255,255,0)'), showlegend=False
+        x=all_forecasts[h]["dates"], 
+        y=all_forecasts[h]["preds"],
+        name=f"{h}-Day Forecast",
+        line=dict(width=3)
     ))
-fig.add_trace(go.Scatter(x=df_store.index[-60:], y=df_store['sales'].tail(60), name="Actual Sales", line=dict(color="#94a3b8")))
-fig.update_layout(template="plotly_dark" if theme_choice=="Dark" else "plotly_white",
-                  hovermode="x unified", height=500, margin=dict(l=20,r=20,t=20,b=20))
-st.plotly_chart(fig,use_container_width=True)
+fig.add_trace(go.Scatter(
+    x=df_store.index[-60:], 
+    y=df_store['sales'].tail(60), 
+    name="Actual History", 
+    line=dict(color="#94a3b8")
+))
+fig.update_layout(template="plotly_dark" if theme_choice=="Dark" else "plotly_white", hovermode="x unified", height=500)
+st.plotly_chart(fig, use_container_width=True)
 
-# ================== 8️⃣ Feature Importance ==================
-feat_names_display = {
-    'lag_1':'مبيعات اليوم السابق',
-    'lag_7':'مبيعات الأسبوع السابق',
-    'rolling_mean_7':'متوسط 7 أيام',
-    'rolling_mean_14':'متوسط 14 يوم',
-    'dayofweek_sin':'اليوم الأسبوعي (Sine)',
-    'dayofweek_cos':'اليوم الأسبوعي (Cos)',
-    'month_sin':'الشهر (Sine)',
-    'month_cos':'الشهر (Cos)',
-    'is_weekend':'عطلة نهاية الأسبوع',
-    'was_closed_yesterday':'إغلاق أمس'
+# ================== 9️⃣ Feature Importance ==================
+st.subheader(t["feature_imp"])
+feat_map = {
+    "lag_1":"مبيعات أمس / Yesterday Sales",
+    "lag_7":"مبيعات الأسبوع الماضي / Last Week Sales",
+    "rolling_mean_7":"متوسط 7 أيام / 7-Day Avg",
+    "rolling_mean_14":"متوسط 14 يوم / 14-Day Avg",
+    "is_weekend":"إجازة / Weekend",
+    "was_closed_yesterday":"أغلق أمس / Closed Yesterday"
 }
 importance = model.get_feature_importance()
-importance_names = [feat_names_display.get(f,f) for f in feature_names]
-fig_imp = go.Figure(go.Bar(x=importance, y=importance_names, orientation='h', marker=dict(color='#3b82f6')))
-fig_imp.update_layout(template="plotly_dark" if theme_choice=="Dark" else "plotly_white",
-                      height=300, margin=dict(l=20,r=20,t=40,b=20))
-st.subheader("🎯 Feature Significance / أهمية الميزات")
-st.plotly_chart(fig_imp,use_container_width=True)
+names = [feat_map.get(f,f) for f in feature_names]
+fig_imp = go.Figure(go.Bar(x=importance, y=names, orientation='h', marker=dict(color='#3b82f6')))
+fig_imp.update_layout(template="plotly_dark" if theme_choice=="Dark" else "plotly_white", height=350)
+st.plotly_chart(fig_imp, use_container_width=True)
 
-# ================== 9️⃣ Export Preview ==================
-export_df = pd.DataFrame()
-for h in horizons:
-    df_h = pd.DataFrame({"Date":all_forecasts[h]['dates'],
-                         f"Forecast_{h}":all_forecasts[h]['preds'],
-                         f"Min_{h}":all_forecasts[h]['lowers'],
-                         f"Max_{h}":all_forecasts[h]['uppers']})
-    export_df = pd.concat([export_df, df_h.set_index("Date")], axis=1)
-export_df.reset_index(inplace=True)
-st.subheader("📥 Export Preview / معاينة التصدير")
-st.dataframe(export_df.head(10),use_container_width=True)
-st.download_button("Download CSV / تحميل CSV", export_df.to_csv(index=False), f"forecast_{selected_store}.csv")
+# ================== 10️⃣ Export Preview ==================
+st.subheader(t["export_preview"])
+for h in horizon_days:
+    res_df = pd.DataFrame({
+        "Date": all_forecasts[h]["dates"],
+        "Forecast": all_forecasts[h]["preds"],
+        "Min": all_forecasts[h]["lowers"],
+        "Max": all_forecasts[h]["uppers"]
+    })
+    st.write(f"{h}-Day Forecast")
+    st.dataframe(res_df.head(10), use_container_width=True)
+    st.download_button(f"Download {h}-Day CSV", res_df.to_csv(index=False), f"forecast_{selected_store}_{h}d.csv")
 
-# ================== 10️⃣ Footer ==================
+# ================== 11️⃣ Footer ==================
 st.markdown("---")
-st.markdown("""
-<div style="display:flex; justify-content:space-between; align-items:center;">
-    <div>Eng. Goda Emad</div>
-    <div>
-        <a href="https://github.com/Goda-Emad" target="_blank" style="margin-right:10px;">GitHub</a>
-        <a href="https://www.linkedin.com/in/goda-emad/" target="_blank">LinkedIn</a>
-    </div>
-    <div>© 2026 Retail AI Dashboard</div>
-</div>
+st.markdown(f"""
+<p style="text-align:center; font-size:14px;">
+Eng. Goda Emad | 
+<a href='https://github.com/Goda-Emad' target='_blank'>GitHub</a> | 
+<a href='https://www.linkedin.com/in/goda-emad/' target='_blank'>LinkedIn</a> | 
+© 2026
+</p>
 """, unsafe_allow_html=True)
+st.markdown("---")
+
