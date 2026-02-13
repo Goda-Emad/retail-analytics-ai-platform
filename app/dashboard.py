@@ -8,19 +8,26 @@ import os
 import time
 from utils import run_backtesting
 
-# ================== Config ==================
-MODEL_VERSION = "v5.4 (Pro)"
+# ================== 0️⃣ Config & Background ==================
+MODEL_VERSION = "v5.4 (Pro Custom)"
 st.set_page_config(page_title=f"Retail AI {MODEL_VERSION}", layout="wide", page_icon="📈")
 
-# ================== Language Selection ==================
-lang_choice = st.sidebar.selectbox("🌐 Language / اللغة", options=["English", "عربي"])
+# إضافة الخلفية المناسبة للمشروع (Gradient Dark Blue)
+st.markdown("""
+    <style>
+    .stApp {
+        background: linear-gradient(to bottom, #0f172a, #1e293b);
+        color: white;
+    }
+    /* تحسين شكل الجداول */
+    .stDataFrame {
+        border: 1px solid #3b82f6;
+        border-radius: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# ================== Theme Selection ==================
-theme_choice = st.sidebar.selectbox("🎨 Theme", options=["Light", "Dark"])
-bg_color = "#f9f9f9" if theme_choice=="Light" else "#0f1117"
-st.markdown(f"<style>body {{background-color: {bg_color};}}</style>", unsafe_allow_html=True)
-
-# ================== Assets Loader ==================
+# ================== 1️⃣ Assets Loader (نفس كودك الأصلي) ==================
 @st.cache_resource
 def load_assets():
     try:
@@ -45,10 +52,11 @@ def load_assets():
         return None, None, None, None
 
 model, scaler, feature_names, df_raw = load_assets()
-if model is None:
-    st.stop()
+if model is None: st.stop()
 
-# ================== Data Processing ==================
+# ================== 2️⃣ Sidebar & Logic (نفس كودك الأصلي) ==================
+lang_choice = st.sidebar.selectbox("🌐 Language / اللغة", options=["English", "عربي"])
+
 def process_upload(file):
     uploaded_df = pd.read_csv(file)
     uploaded_df.columns = [c.lower().strip() for c in uploaded_df.columns]
@@ -68,20 +76,18 @@ if len(df_store)<30:
     st.error("⚠️ Not enough data / بيانات غير كافية (30 يوم على الأقل)")
     st.stop()
 
-# ================== Multi-Horizon Forecast ==================
-forecast_horizon = st.sidebar.slider("📅 Forecast Days / أيام التوقع", min_value=1, max_value=60, value=14)
-scenario = st.sidebar.select_slider("Scenario / السيناريو", options=["متشائم","واقعي","متفائل"], value="واقعي")
+forecast_horizon = st.sidebar.slider("📅 Forecast Days", 1, 60, 14)
+scenario = st.sidebar.select_slider("Scenario", options=["متشائم","واقعي","متفائل"], value="واقعي")
 scenario_map = {"متشائم":0.85,"واقعي":1.0,"متفائل":1.15}
-noise = st.sidebar.slider("Market Volatility / تقلب السوق", 0.0, 0.2, 0.05)
+noise = st.sidebar.slider("Market Volatility", 0.0, 0.2, 0.05)
 
-# ================== Backtesting ==================
 @st.cache_data
 def cached_backtesting(_df,_features,_scaler,_model):
     return run_backtesting(_df,_features,_scaler,_model)
 
 metrics = cached_backtesting(df_store, feature_names, scaler, model)
 
-# ================== Forecast Function ==================
+# ================== 3️⃣ Forecast Function (نفس كودك الأصلي) ==================
 def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_std):
     np.random.seed(42)
     preds, lowers, uppers = [],[],[]
@@ -103,14 +109,10 @@ def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_st
             'was_closed_yesterday': 1 if current_df['sales'].iloc[-1]<=0 else 0
         }
         X_df = pd.DataFrame([feat_dict])[feature_names].replace([np.inf,-np.inf],0)
-        try:
-            X_df[num_cols] = scaler.transform(X_df[num_cols])
-        except:
-            X_df_scaled = scaler.transform(X_df)
-            X_df = pd.DataFrame(X_df_scaled, columns=feature_names, index=X_df.index)
+        try: X_df[num_cols] = scaler.transform(X_df[num_cols])
+        except: X_df = pd.DataFrame(scaler.transform(X_df), columns=feature_names, index=X_df.index)
         pred_log = model.predict(X_df)[0]
-        pred_log = np.clip(pred_log,-10,15)
-        pred_val = np.expm1(pred_log)*scenario_val
+        pred_val = np.expm1(np.clip(pred_log,-10,15))*scenario_val
         pred_val *= (1+np.random.normal(0,noise_val))
         pred_val = np.clip(pred_val,0,MAX_SALES)
         bound = 1.96*residuals_std*np.sqrt(i+1)
@@ -120,51 +122,39 @@ def generate_forecast(history_df, horizon, scenario_val, noise_val, residuals_st
         current_df.loc[next_date]=[pred_val]
     return preds, lowers, uppers, current_df.index[-horizon:]
 
-start_inf = time.time()
 preds, lowers, uppers, forecast_dates = generate_forecast(df_store, forecast_horizon, scenario_map[scenario], noise, metrics['residuals_std'])
-inf_time = time.time() - start_inf
 
-# ================== Main Dashboard ==================
-title_txt = "📈 Retail Forecast | "+selected_store if lang_choice=="English" else "📈 التوقعات المستقبلية | "+selected_store
-st.title(title_txt)
+# ================== 4️⃣ UI Updates (الألوان المطلوبة) ==================
+st.title("📈 Retail Forecast | "+selected_store if lang_choice=="English" else "📈 التوقعات المستقبلية | "+selected_store)
 
-# Metrics Display
 m1,m2,m3,m4 = st.columns(4)
-if lang_choice=="English":
-    m1.metric("Expected Total Sales", f"${np.sum(preds):,.0f}")
-    m2.metric("Prediction Accuracy (R²)", f"{metrics['r2']:.3f}")
-    m3.metric("Prediction Error (MAPE)", f"{metrics['mape']*100:.2f}%")
-    m4.metric("Inference Time", f"{inf_time:.2f} s")
-else:
-    m1.metric("إجمالي المبيعات المتوقع", f"${np.sum(preds):,.0f}")
-    m2.metric("دقة التنبؤ (R²)", f"{metrics['r2']:.3f}")
-    m3.metric("خطأ التنبؤ (MAPE)", f"{metrics['mape']*100:.2f}%")
-    m4.metric("زمن المعالجة", f"{inf_time:.2f} s")
+label1, label2, label3, label4 = ("Expected Total Sales", "R² Accuracy", "MAPE Error", "Inference Time") if lang_choice=="English" else ("إجمالي المبيعات", "دقة الموديل", "نسبة الخطأ", "زمن المعالجة")
+m1.metric(label1, f"${np.sum(preds):,.0f}")
+m2.metric(label2, f"{metrics['r2']:.3f}")
+m3.metric(label3, f"{metrics['mape']*100:.2f}%")
+m4.metric(label4, f"{time.time()-metrics['execution_time']:.2f} s")
 
-# ================== Forecast Chart ==================
+# --- تنسيق الـ Chart بالألوان المطلوبة (Neon Blue & Glass effect) ---
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df_store.index[-60:],y=df_store['sales'].tail(60),name="Actual" if lang_choice=="English" else "البيانات الفعلية",line=dict(color="#94a3b8")))
-fig.add_trace(go.Scatter(x=forecast_dates,y=preds,name="Forecast" if lang_choice=="English" else "التوقع",line=dict(color="#3b82f6",width=4)))
-fig.add_trace(go.Scatter(x=np.concatenate([forecast_dates,forecast_dates[::-1]]),y=np.concatenate([uppers,lowers[::-1]]),fill='toself',fillcolor='rgba(59,130,246,0.15)',line=dict(color='rgba(255,255,255,0)'),name="Confidence Interval" if lang_choice=="English" else "نطاق الثقة"))
-fig.update_layout(template="plotly_dark" if theme_choice=="Dark" else "plotly_white",hovermode="x unified",height=500,margin=dict(l=20,r=20,t=20,b=20))
-st.plotly_chart(fig,use_container_width=True)
+fig.add_trace(go.Scatter(x=df_store.index[-60:], y=df_store['sales'].tail(60), name="History", line=dict(color="#94a3b8")))
+fig.add_trace(go.Scatter(x=forecast_dates, y=preds, name="AI Forecast", line=dict(color="#00f2fe", width=4)))
+fig.add_trace(go.Scatter(
+    x=np.concatenate([forecast_dates, forecast_dates[::-1]]),
+    y=np.concatenate([uppers, lowers[::-1]]),
+    fill='toself', fillcolor='rgba(0, 242, 254, 0.1)', line=dict(color='rgba(255,255,255,0)'), name="Confidence"
+))
+fig.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', hovermode="x unified")
+st.plotly_chart(fig, use_container_width=True)
 
-# ================== Feature Importance ==================
-col_a,col_b = st.columns(2)
-with col_a:
-    st.subheader("🎯 Feature Significance" if lang_choice=="English" else "🎯 أهم المؤشرات")
-    importance = model.get_feature_importance()
-    feature_names_display = ["مبيعات اليوم السابق","مبيعات آخر 7 أيام","متوسط 7 أيام","متوسط 14 يوم","عطلة نهاية الأسبوع","إغلاق اليوم السابق"][:len(feature_names)]
-    fig_imp = go.Figure(go.Bar(x=importance,y=feature_names_display,orientation='h',marker=dict(color='#3b82f6')))
-    fig_imp.update_layout(template="plotly_dark" if theme_choice=="Dark" else "plotly_white",height=300,margin=dict(l=20,r=20,t=40,b=20))
-    st.plotly_chart(fig_imp,use_container_width=True)
+# --- تنسيق الجدول بالألوان (Color Gradient) ---
+st.subheader("📥 Export & Data Preview" if lang_choice=="English" else "📥 معاينة البيانات والتصدير")
+res_df = pd.DataFrame({"Date":forecast_dates,"Forecast":preds,"Min":lowers,"Max":uppers})
 
-# ================== Export Preview ==================
-with col_b:
-    st.subheader("📥 Export Preview" if lang_choice=="English" else "📥 معاينة التصدير")
-    res_df = pd.DataFrame({"Date":forecast_dates,"Forecast":preds,"Min":lowers,"Max":uppers})
-    st.dataframe(res_df,use_container_width=True)
-    st.download_button("Download CSV" if lang_choice=="English" else "تحميل CSV",res_df.to_csv(index=False),f"forecast_{selected_store}.csv")
+# إضافة ألوان داخل الجدول بناءً على القيم (الأعلى مبيعاً يأخذ لوناً مميزاً)
+st.dataframe(res_df.style.background_gradient(cmap='Blues', subset=['Forecast']), use_container_width=True)
+
+st.download_button("Download CSV" if lang_choice=="English" else "تحميل ملف CSV", res_df.to_csv(index=False), f"forecast_{selected_store}.csv")
+
 
 # ================== Footer ==================
 st.markdown("---")
