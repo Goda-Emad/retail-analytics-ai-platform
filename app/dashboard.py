@@ -3,30 +3,62 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import joblib, os, time
-import google.generativeai as genai
+import requests
 
-# إعدادات بيئة العمل لتخطي مشاكل الشبكة
-os.environ["GRPC_VERBOSITY"] = "ERROR"
+# ================== إعداد Gemini بطريقة Production ==================
 
-# إعداد الربط بالمفتاح (GODA)
-# جربنا هنا نشيل client_options عشان نشوف لو المكتبة هتعرف المسار لوحدها مع الـ REST
-genai.configure(
-    api_key="AIzaSyCJPsGXAUYUuC8XguAJ_t5AKRgCcQrTLz0",
-    transport='rest'
-)
+# قراءة المفتاح من Environment Variable (مهم للأمان)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# تغيير اسم الموديل لـ 'gemini-1.5-flash-latest' لضمان الوصول لأحدث نسخة مستقرة
-# أو استخدام 'gemini-1.5-pro' لو لسه الـ 404 موجودة
-try:
-    gemini_model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest')
-except Exception:
-    gemini_model = genai.GenerativeModel(model_name='gemini-1.5-flash')
+def ask_gemini(prompt_text):
+    """
+    اتصال مباشر بـ Gemini عبر REST
+    بدون grpc
+    بدون مكتبات Google
+    مناسب لأي VPS أو Gaming Server
+    """
 
-# استكمال باقي الاستدعاءات
+    if not GEMINI_API_KEY:
+        return "❌ GEMINI_API_KEY not found in environment variables."
+
+    url = (
+        "https://generativelanguage.googleapis.com/"
+        "v1beta/models/gemini-1.5-flash:generateContent"
+        f"?key={GEMINI_API_KEY}"
+    )
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt_text}
+                ]
+            }
+        ]
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=25)
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    except requests.exceptions.RequestException as e:
+        return f"❌ Connection Error: {str(e)}"
+    except Exception as e:
+        return f"❌ Unexpected Error: {str(e)}"
+
+
+# ================== استكمال باقي الاستدعاءات ==================
 try:
     from utils import run_backtesting
 except ImportError:
     pass
+
 # ================== إعدادات الصفحة ==================
 MODEL_VERSION = "v5.6 (Final Fix)"
 st.set_page_config(
@@ -529,29 +561,27 @@ if 'p' in locals() and len(p) > 0:
 
     st.markdown("---")
 
-    # 2. زر استدعاء Gemini (الاستدعاء المباشر)
-    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final_stable"):
+    # 2. زر استدعاء Gemini (الاستدعاء المباشر عبر REST)
+    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final_rest"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
-            
-            # البرومت الموجه للموديل
+
+            # إعداد البرومت
             prompt_text = f"""
             Act as a retail expert. 
             Analyze: Store {selected_store}, Forecast ${total_sales_val:,.0f}, Growth {growth_val:+.1f}%. 
             Provide 3 short business tips in {current_lang_name}.
             """
 
-            try:
-                # استدعاء الموديل المعرف في الجزء الأول (بدون كلمة transport هنا)
-                response = gemini_model.generate_content(prompt_text)
-                
-                st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
-                st.info(response.text)
-                st.success(t("✅ تم الاتصال بنجاح بمفتاح جودة (GODA)", "✅ Connected Successfully with GODA Key"))
-                
-            except Exception as e:
-                st.error(t("❌ فشل الاتصال بخوادم Google AI.", "❌ Connection Failed."))
-                with st.expander("🛠️ تفاصيل العطل (Diagnostic)"):
-                    st.code(str(e))
+            # استدعاء Gemini عبر REST
+            response_text = ask_gemini(prompt_text)
+            
+            st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
+            if response_text.startswith("❌"):
+                st.error(response_text)
+            else:
+                st.info(response_text)
+                st.success(t("✅ تم الاتصال بنجاح بمفتاح Gemini من Environment", "✅ Connected Successfully with GEMINI Key"))
+
 else:
     st.warning(t("يرجى تشغيل التنبؤ أولاً للحصول على استشارة.", "Please run the forecast first to get AI advice."))
 
@@ -563,11 +593,9 @@ with col_footer_1:
     st.markdown(f"👨‍💻 {t('تم التطوير بواسطة', 'Developed by')}: **ENG.GODA EMAD**")
 
 with col_footer_2:
-    # رابط لينكد إن الخاص بك
     st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>', unsafe_allow_html=True)
 
 with col_footer_3:
-    # رابط جيت هاب الخاص بك
     st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>', unsafe_allow_html=True)
 
 # تذييل الصفحة الأخير
