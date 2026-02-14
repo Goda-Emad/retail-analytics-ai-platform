@@ -139,7 +139,7 @@ def apply_theme_css():
 
 apply_theme_css()
 
-# ================== 3️⃣ Forecast Engine & Plotly Charts (Updated Premium Version) ==================
+# ================== 3️⃣ Forecast Engine & Plotly Charts (Premium Version) ==================
 
 # --- 0️⃣ تحديث ثيم الرسم والألوان حسب الوضع ---
 CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
@@ -160,63 +160,74 @@ feature_labels = {
     'was_closed_yesterday': t("مغلق أمس", "Was Closed Yesterday")
 }
 
-# --- 2️⃣ دالة التوقع الذكي ---
+# --- 2️⃣ دالة التوقع الذكي مع حماية من الأخطاء ---
 def generate_forecast(hist, h, scen_val, res_std):
     np.random.seed(42)
     preds, lows, ups = [], [], []
-    
+    forecast_dates = []
+
     mean_sales = float(hist['sales'].mean())
-    start_date = pd.Timestamp.now().normalize()
+    start_date = hist.index.max() + pd.Timedelta(days=1)
     logical_cap = hist['sales'].max() * 5 if hist['sales'].max() > 0 else 1000000
     actual_std = hist['sales'].std()
     safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 500)
-    
+
     temp_sales_buffer = list(hist['sales'].tail(30).values)
-    forecast_dates = []
 
     for i in range(h):
-        nxt = start_date + pd.Timedelta(days=i+1)
+        nxt = start_date + pd.Timedelta(days=i)
         forecast_dates.append(nxt)
-        
-        feats = {
-            'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 
-            'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
-            'month_sin': np.sin(2*np.pi*(nxt.month-1)/12), 
-            'month_cos': np.cos(2*np.pi*(nxt.month-1)/12),
-            'lag_1': float(temp_sales_buffer[-1]), 
-            'lag_7': float(temp_sales_buffer[-7] if len(temp_sales_buffer)>=7 else mean_sales),
-            'rolling_mean_7': float(np.mean(temp_sales_buffer[-7:])), 
-            'rolling_mean_14': float(np.mean(temp_sales_buffer[-14:])),
-            'is_weekend': 1 if nxt.dayofweek>=5 else 0, 
-            'was_closed_yesterday': 1 if temp_sales_buffer[-1]<=0 else 0
-        }
-        
-        X = pd.DataFrame([feats])[feature_names]
-        X_scaled = scaler.transform(X)
-        
-        p_log = model.predict(X_scaled)[0]
-        p_log_safe = np.clip(p_log, 0, 12)
-        p = np.expm1(p_log_safe) * scen_val
-        p = min(p, logical_cap)
-        boost = 1.96 * safe_std * np.sqrt(i + 1)
-        
-        preds.append(float(p))
-        lows.append(float(max(0, p - boost)))
-        ups.append(float(min(p + boost, logical_cap * 1.2)))
-        
-        temp_sales_buffer.append(p)
-        
+
+        try:
+            feats = {
+                'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 
+                'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
+                'month_sin': np.sin(2*np.pi*(nxt.month-1)/12), 
+                'month_cos': np.cos(2*np.pi*(nxt.month-1)/12),
+                'lag_1': float(temp_sales_buffer[-1]), 
+                'lag_7': float(temp_sales_buffer[-7] if len(temp_sales_buffer)>=7 else mean_sales),
+                'rolling_mean_7': float(np.mean(temp_sales_buffer[-7:] if len(temp_sales_buffer)>=7 else temp_sales_buffer)),
+                'rolling_mean_14': float(np.mean(temp_sales_buffer[-14:] if len(temp_sales_buffer)>=14 else temp_sales_buffer)),
+                'is_weekend': 1 if nxt.dayofweek>=5 else 0, 
+                'was_closed_yesterday': 1 if temp_sales_buffer[-1]<=0 else 0
+            }
+
+            X = pd.DataFrame([feats])[feature_names]
+            X_scaled = scaler.transform(X)
+
+            p_log = model.predict(X_scaled)[0]
+            p_log_safe = np.clip(p_log, 0, 12)
+            p = np.expm1(p_log_safe) * scen_val
+            p = min(p, logical_cap)
+
+            boost = 1.96 * safe_std * np.sqrt(i + 1)
+
+            preds.append(float(p))
+            lows.append(float(max(0, p - boost)))
+            ups.append(float(min(p + boost, logical_cap * 1.2)))
+
+            temp_sales_buffer.append(p)
+
+        except Exception as e:
+            # fallback في حالة أي خطأ
+            preds.append(mean_sales)
+            lows.append(0)
+            ups.append(mean_sales * 1.2)
+            temp_sales_buffer.append(mean_sales)
+
     return preds, lows, ups, pd.DatetimeIndex(forecast_dates)
 
 # --- 3️⃣ تنفيذ التوقع ---
 p, l, u, d = generate_forecast(df_s, horizon, scen, metrics['residuals_std'])
 
 # --- 4️⃣ رسم Plotly ديناميكي مع Glassmorphic Background ---
+n_last = min(len(df_s), 60)
+
 fig = go.Figure()
 
 # Actual Sales
 fig.add_trace(go.Scatter(
-    x=df_s.index[-60:], y=df_s['sales'].tail(60),
+    x=df_s.index[-n_last:], y=df_s['sales'].tail(n_last),
     mode='lines+markers',
     name=t("المبيعات الفعلية", "Actual Sales"),
     line=dict(color=NEON_COLOR),
@@ -249,7 +260,7 @@ fig.add_trace(go.Scatter(
 fig.update_layout(
     template=CHART_TEMPLATE,
     title=dict(text=t("📈 توقع المبيعات القادمة", "📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
-    paper_bgcolor='rgba(255,255,255,0.1)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,0,0,0.3)', # Glass effect
+    paper_bgcolor='rgba(255,255,255,0.1)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,0,0,0.3)',
     plot_bgcolor='rgba(255,255,255,0.05)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,0,0,0.1)',
     hovermode="x unified",
     xaxis=dict(title=t("التاريخ","Date"), color=TEXT_COLOR),
