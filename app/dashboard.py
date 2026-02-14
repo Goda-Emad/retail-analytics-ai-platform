@@ -255,19 +255,10 @@ def generate_forecast(hist, h, scen_val, res_std):
 
 # تنفيذ التوقع بناءً على المعطيات
 p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
-# ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية الشاملة - تعديل ENG.GODA) ==================
+# ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية - تعديل ENG.GODA) ==================
 
-# --- حماية من NameError: التأكد من تعريف theme_choice قبل استخدامه ---
-if 'theme_choice' not in locals():
-    # في حالة لم يتم تعريفه في الأجزاء السابقة، نقوم بتعريفه هنا كاحتياط
-    theme_choice = st.sidebar.selectbox(
-        t("🎨 اختيار الثيم", "🎨 Select Theme"), 
-        options=["Dark Mode", "Light Mode"], 
-        index=1,
-        key="theme_selector_p4"
-    )
-
-# 1. تعريف الألوان والقوالب (هذا هو السطر 237 الذي كان يسبب الخطأ)
+# 1. استخدام المتغيرات المعرفة مسبقاً في الجزء الثاني (لحماية التطبيق من الـ Duplicate ID)
+# لا نحتاج لتعريف theme_choice هنا لأنه موجود بالفعل في السايدبار فوق
 NEON_COLOR = "#00f2fe"
 CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 
@@ -304,7 +295,7 @@ fig.add_trace(go.Scatter(
     showlegend=False
 ))
 
-# إضافة المبيعات التاريخية
+# إضافة المبيعات التاريخية (آخر 60 يوم)
 fig.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
@@ -349,7 +340,8 @@ with col_left:
     except:
         importances = np.zeros(len(feature_names))
 
-    names = [feat_ar.get(n, n) for n in feature_names] if lang=="عربي" else feature_names
+    # استخدام متغير lang اللي عرفناه في الجزء التاني
+    names = [feat_ar.get(n, n) for n in feature_names] if st.session_state['lang_state']=="عربي" else feature_names
     
     fig_imp = go.Figure(go.Bar(
         x=importances, y=names, orientation='h', 
@@ -382,7 +374,6 @@ with col_right:
         .background_gradient(cmap="Blues", subset=[res_df.columns[1]])
     )
     st.dataframe(styled_df, use_container_width=True, hide_index=True, height=400)
-
 # ================== 5️⃣ تحليل توزيع الأخطاء ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
