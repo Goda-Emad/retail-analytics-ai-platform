@@ -7,71 +7,69 @@ import requests
 
 # ================== 1️⃣ إعداد Gemini عبر REST API (تعديل ENG.GODA) ==================
 
-# قراءة المفتاح من Streamlit Secrets
-# تأكد أنك كتبت GEMINI_API_KEY في خانة Secrets بالمتصفح
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 def ask_gemini(prompt_text):
     """
-    دالة لاستدعاء Gemini باستخدام مكتبة requests مباشرة.
-    تستخدم نسخة v1 المستقرة لتجنب أخطاء 404.
+    حل مشكلة الـ 404: تم تحديث الرابط لـ v1beta لأن موديل Flash يتطلب ذلك أحياناً
     """
     if not GEMINI_API_KEY:
         return "❌ GEMINI_API_KEY غير موجود في الإعدادات (Secrets)."
 
-    # الرابط المستقر لنسخة v1
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    # التعديل لضمان عدم حدوث 404
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
 
-    headers = {
-        "Content-Type": "application/json"
-    }
-
+    headers = {"Content-Type": "application/json"}
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt_text}
-                ]
-            }
-        ]
+        "contents": [{"parts": [{"text": prompt_text}]}]
     }
 
     try:
-        # إرسال الطلب
         response = requests.post(url, headers=headers, json=payload, timeout=20)
-        
-        # في حالة نجاح الطلب
         if response.status_code == 200:
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]
-        
-        # في حالة وجود خطأ من جوجل (مثل 404 أو 400)
         else:
             return f"❌ خطأ من جوجل ({response.status_code}): {response.text}"
-
-    except requests.exceptions.RequestException as e:
-        return f"❌ فشل الاتصال بالسيرفر: {str(e)}"
     except Exception as e:
-        return f"❌ خطأ غير متوقع: {str(e)}"
+        return f"❌ فشل الاتصال: {str(e)}"
 
-# ================== 2️⃣ استكمال باقي الاستدعاءات والتحميل ==================
+# ================== 2️⃣ إعدادات الصفحة وحل مشكلة الـ NameError ==================
 
-try:
-    from utils import run_backtesting
-except ImportError:
-    pass
+# تهيئة اللغة في الـ Session State قبل أي شيء
+if 'lang' not in st.session_state:
+    st.session_state['lang'] = 'عربي'
+
+# دالة الترجمة
+def t(ar, en):
+    return ar if st.session_state.get('lang', 'عربي') == 'عربي' else en
 
 # إعدادات الصفحة
-MODEL_VERSION = "v5.7 (Final Stable)"
+MODEL_VERSION = "v5.9 (Stable Fix)"
 st.set_page_config(
     page_title=f"Retail AI {MODEL_VERSION}",
     layout="wide",
     page_icon="📈"
 )
 
-# دالة مساعدة للترجمة (لو كنت بتستخدمها في باقي الكود)
-def t(ar, en):
-    return ar if st.session_state.get('lang', 'عربي') == 'عربي' else en
+# --- حل الـ NameError: تعريف الثيم فوراً في السايدبار ---
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    
+    # اختيار اللغة
+    lang_choice = st.radio("Language / اللغة", ["عربي", "English"], index=0 if st.session_state['lang'] == 'عربي' else 1)
+    st.session_state['lang'] = lang_choice
+
+    # اختيار الثيم (تعريف المتغير theme_choice قبل استخدامه في الأجزاء 4 و 5)
+    theme_choice = st.selectbox(
+        t("🎨 اختيار الثيم", "🎨 Select Theme"),
+        options=["Dark Mode", "Light Mode"],
+        index=1
+    )
+
+# تعريف متغيرات الثيم بناءً على الاختيار (لتكون متاحة لكل الكود)
+CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
+NEON_COLOR = "#00f2fe"
 
 # تحميل الملفات الأساسية
 @st.cache_resource
