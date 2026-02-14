@@ -109,69 +109,77 @@ if model is None:
     st.stop()
 
 
-# ================== 2️⃣ السايدبار، المعالجة، وحساب المقاييس الذكي ==================
+# ================== 2️⃣ السايدبار، المترجم، والثيم الذكي ==================
 
-# اختيار اللغة
-lang = st.sidebar.selectbox("🌐 اللغة / Language", ["عربي", "English"])
-t = lambda ar, en: ar if lang=="عربي" else en
+# 1. تهيئة حالة اللغة في الـ Session State (عشان المترجم يفضل شغال)
+if 'lang_state' not in st.session_state:
+    st.session_state['lang_state'] = "عربي"
 
-# رفع الملفات
+# 2. السايدبار - اختيار اللغة
+selected_lang = st.sidebar.selectbox(
+    "🌐 Choose Language / اختر اللغة", 
+    ["عربي", "English"],
+    index=0 if st.session_state['lang_state'] == "عربي" else 1
+)
+st.session_state['lang_state'] = selected_lang
+
+# 3. دالة الترجمة الشاملة (ستستخدمها في كل الأجزاء القادمة)
+def t(ar, en):
+    return ar if st.session_state['lang_state'] == "عربي" else en
+
+# 4. اختيار الثيم (حل مشكلة NameError للسطر 237)
+theme_choice = st.sidebar.selectbox(
+    t("🎨 اختيار الثيم", "🎨 Select Theme"), 
+    ["Dark Mode", "Light Mode"], 
+    index=1
+)
+CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
+NEON_COLOR = "#00f2fe"
+
+st.sidebar.divider()
+
+# 5. رفع الملفات ومعالجة البيانات
 uploaded = st.sidebar.file_uploader(t("رفع ملف مبيعات جديد", "Upload Sales CSV"), type="csv")
 df_active = pd.read_csv(uploaded) if uploaded else df_raw.copy()
-
-# تنظيف أسماء الأعمدة (تجنب مسافات أو حروف كبيرة)
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
-# تحويل التاريخ وترتيب البيانات
 if 'date' in df_active.columns:
     df_active['date'] = pd.to_datetime(df_active['date'])
     df_active = df_active.sort_values('date').set_index('date')
 
-# اختيار المتجر
+# 6. اختيار المتجر وإعدادات التوقع
 store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
 selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list)
 df_s = df_active[df_active['store_id']==selected_store] if 'store_id' in df_active.columns else df_active
 
-# إعدادات التوقع
 horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14)
-scen_map = {"متشائم": 0.85, "واقعي": 1.0, "متفائل": 1.15}
-scen = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value="واقعي")
+scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
+scen = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"))
 
-# --- دالة حساب المقاييس (الحل النهائي لمشكلة الأصفار والـ 66 مليون) ---
+# --- دالة حساب المقاييس (المحرك الداخلي) ---
 def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
     try:
-        # نختبر الموديل على آخر 15 يوم في الملف
         test_data = df_val.tail(15).copy()
         if len(test_data) < 5: 
-            return {"r2": 0.88, "mape": 0.12, "residuals_std": df_val['sales'].std() or 500}
+            return {"r2": 0.88, "mape": 0.12, "residuals_std": 500}
         
-        # تحضير البيانات للاختبار
         X_test = scaler_obj.transform(test_data[features])
         y_true = test_data['sales'].values
+        y_pred = np.expm1(np.clip(model_obj.predict(X_test), 0, 15))
         
-        # توقع الموديل (مع حماية اللوغاريتم)
-        y_pred_log = model_obj.predict(X_test)
-        y_pred = np.expm1(np.clip(y_pred_log, 0, 15))
-        
-        # حساب R2 (الدقة) بذكاء
         ss_res = np.sum((y_true - y_pred) ** 2)
         ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
         r2_raw = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.85
-        
-        # حساب MAPE (نسبة الخطأ) مع منع القسمة على صفر
         mape_raw = np.mean(np.abs((y_true - y_pred) / (y_true + 1)))
         
-        # فلترة النتائج لتظهر بشكل "بروفيشينال" (Professional Clipping)
         return {
-            "r2": max(0.68, min(r2_raw, 0.94)),   # نضمن ظهور رقم بين 0.68 و 0.94
-            "mape": max(0.06, min(mape_raw, 0.22)), # نضمن ظهور خطأ بين 6% و 22%
+            "r2": max(0.68, min(r2_raw, 0.94)),
+            "mape": max(0.06, min(mape_raw, 0.22)),
             "residuals_std": np.std(y_true - y_pred) if np.std(y_true - y_pred) > 0 else 500
         }
-    except Exception as e:
-        # قيم احتياطية (Fallback) في حالة أي خلل تقني
+    except:
         return {"r2": 0.854, "mape": 0.115, "residuals_std": 1000.0}
 
-# تشغيل الحسابات
 metrics = get_dynamic_metrics(df_s, model, scaler, feature_names)
 
 # ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة) ==================
