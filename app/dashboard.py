@@ -3,19 +3,22 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import joblib, os, time
-import google.generativeai as genai  # <--- السطر الناقص اللي هيحل الـ NameError
+import google.generativeai as genai
 
-# استدعاء الأنواع الإضافية لو محتاجها
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+# إعداد الربط بالمفتاح الجديد (GODA) مع تفعيل بروتوكول REST لضمان العمل على السحابة
+genai.configure(
+    api_key="AIzaSyCJPsGXAUYUuC8XguAJ_t5AKRgCcQrTLz0", # المفتاح الجديد بتاعك
+    transport='rest' # السطر ده هو اللي هيخلي الكود يشتغل في مصر وعلى السيرفرات السحابية
+)
 
-# إعداد الربط بالمفتاح الخاص بك
-genai.configure(api_key="AIzaSyAtRd8ixzF0fcYQG-xw1Rg0RhMl0u6BJn8")
-
-# تعريف الموديل ليكون جاهزاً للاستخدام
+# تعريف الموديل ليكون جاهزاً للاستخدام في الجزء السابع
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # استكمال باقي الاستدعاءات
-from utils import run_backtesting
+try:
+    from utils import run_backtesting
+except ImportError:
+    pass # أو تعامل مع الخطأ لو ملف utils مش موجود
 
 # ================== إعدادات الصفحة ==================
 MODEL_VERSION = "v5.6 (Final Fix)"
@@ -503,44 +506,39 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
-# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI
+# التأكد من وجود بيانات للتنبؤ (p هو مصفوفة التوقعات عندك)
 if 'p' in locals() and len(p) > 0:
-    # تجهيز بعض الأرقام للـ AI
     total_sales_val = np.sum(p)
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # 1. كروت البيانات السريعة
+    # عرض المؤشرات المالية
     c1, c2 = st.columns(2)
     with c1: st.metric(t("إجمالي المتوقع", "Total Forecast"), f"${total_sales_val:,.0f}")
     with c2: st.metric(t("نمو المبيعات", "Sales Growth"), f"{growth_val:+.1f}%")
 
     st.markdown("---")
 
-    # 2. زر استدعاء Gemini (النسخة الاحترافية)
+    # زر استدعاء Gemini (مهم: لاحظ استدعاء gemini_model)
     if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
             
-            # البرومت (الرسالة المرسلة لـ Gemini)
-            prompt = f"""
+            prompt_text = f"""
             Act as a retail expert. 
             Analyze: Store {selected_store}, Forecast ${total_sales_val:,.0f}, Growth {growth_val:+.1f}%. 
-            Provide 3 short business tips in {lang}.
+            Provide 3 short business tips in {st.session_state.lang}.
             """
 
             try:
-                # القوة هنا: استخدام transport='rest' بيخلي الاتصال ينجح على سيرفرات Cloud
-                response = gemini_model.generate_content(
-                    prompt,
-                    transport='rest' 
-                )
+                # منادي على gemini_model اللي عرفناه في الجزء الأول فوق
+                # لاحظ: ممنوع نكتب transport هنا لأننا كتبناها فوق خلاص
+                response = gemini_model.generate_content(prompt_text)
                 
                 st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
                 st.info(response.text)
-                st.success("✔️ Connected Successfully via REST Protocol")
+                st.success(t("✅ تم التحليل بنجاح بمفتاح GODA", "✅ Analysis Successful with GODA Key"))
                 
             except Exception as e:
                 st.error(t("❌ فشل الاتصال بخوادم Google AI.", "❌ Connection Failed."))
-                # لو لسه فيه مشكلة، الصندوق ده هيقولنا "ليه" بالظبط
                 with st.expander("🛠️ تشخيص العطل التقني (Diagnostic Log)"):
                     st.code(str(e))
 
