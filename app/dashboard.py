@@ -110,7 +110,8 @@ if model is None:
     st.stop()
 
 
-# ================== 2️⃣ Sidebar, Translation & Smart Processing (Final Updated Version) ==================
+
+# ================== 2️⃣ Sidebar, Translation & Smart Processing (Final 2026 Version) ==================
 
 # 1️⃣ تهيئة حالة اللغة والثيم
 if 'lang_state' not in st.session_state:
@@ -122,56 +123,63 @@ if 'theme_state' not in st.session_state:
 def t(ar, en):
     return ar if st.session_state['lang_state'] == "عربي" else en
 
+# 3️⃣ دالة تطبيق CSS حسب الثيم
+def apply_theme_css():
+    global CHART_TEMPLATE, NEON_COLOR
+    CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state']=="Dark Mode" else "plotly"
+    NEON_COLOR = "#00f2fe"
+    
+    if st.session_state['theme_state'] == "Dark Mode":
+        st.markdown("""
+            <style>
+            .stApp, .stAppViewContainer, .stMain { background-color: #0e1117 !important; }
+            [data-testid="stSidebar"], [data-testid="stSidebarContent"] { background-color: #161b22 !important; }
+            h1,h2,h3,h4,h5,h6,p,label,span { color: #ffffff !important; }
+            .stMetric { background-color: #1e2130 !important; border: 1px solid #00f2fe !important; border-radius: 10px; }
+            </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+            <style>
+            .stApp, .stAppViewContainer, .stMain { background-color: #ffffff !important; }
+            h1,h2,h3,h4,h5,h6,p,label,span { color: #31333F !important; }
+            .stMetric { background-color: #f0f2f6 !important; border: 1px solid #cccccc !important; border-radius: 10px; }
+            </style>
+        """, unsafe_allow_html=True)
+
+# 4️⃣ تطبيق CSS عند التحميل
+apply_theme_css()
+
+# ================== Sidebar ==================
 with st.sidebar:
     st.header("⚙️ Configuration / الإعدادات")
     
-    # 3️⃣ اختيار اللغة
+    # اختيار اللغة
     selected_lang = st.selectbox(
         "🌐 Choose Language / اختر اللغة", 
         ["عربي", "English"],
-        index=0 if st.session_state['lang_state'] == "عربي" else 1,
+        index=0 if st.session_state['lang_state']=="عربي" else 1,
         key="main_lang_selector"
     )
     if selected_lang != st.session_state['lang_state']:
         st.session_state['lang_state'] = selected_lang
         st.experimental_rerun()  # إعادة تحميل الصفحة فورًا عند تغيير اللغة
 
-    # 4️⃣ اختيار الثيم
+    # اختيار الثيم
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"), 
         ["Dark Mode", "Light Mode"], 
-        index=0 if st.session_state['theme_state'] == "Dark Mode" else 1,
+        index=0 if st.session_state['theme_state']=="Dark Mode" else 1,
         key="main_theme_selector"
     )
     if theme_choice != st.session_state['theme_state']:
         st.session_state['theme_state'] = theme_choice
-        st.experimental_rerun()  # إعادة تحميل الصفحة فورًا عند تغيير الثيم
-
-# 5️⃣ متغيرات الثيم وحقن CSS ديناميكي
-CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
-NEON_COLOR = "#00f2fe"
-
-if st.session_state['theme_state'] == "Dark Mode":
-    st.markdown("""
-        <style>
-        .stApp, .stAppViewContainer, .stMain { background-color: #0e1117 !important; }
-        [data-testid="stSidebar"], [data-testid="stSidebarContent"] { background-color: #161b22 !important; }
-        h1,h2,h3,h4,h5,h6,p,label,span { color: #ffffff !important; }
-        .stMetric { background-color: #1e2130 !important; border: 1px solid #00f2fe !important; border-radius: 10px; }
-        </style>
-    """, unsafe_allow_html=True)
-else:
-    st.markdown("""
-        <style>
-        .stApp, .stAppViewContainer, .stMain { background-color: #ffffff !important; }
-        h1,h2,h3,h4,h5,h6,p,label,span { color: #31333F !important; }
-        .stMetric { background-color: #f0f2f6 !important; border: 1px solid #cccccc !important; border-radius: 10px; }
-        </style>
-    """, unsafe_allow_html=True)
+        apply_theme_css()         # ← إعادة تطبيق CSS فورًا
+        st.experimental_rerun()   # ← إعادة تحميل الصفحة لتفعيل الثيم الجديد
 
 st.sidebar.divider()
 
-# 6️⃣ رفع الملفات ومعالجة البيانات
+# ================== رفع الملفات ومعالجة البيانات ==================
 uploaded = st.sidebar.file_uploader(
     t("رفع ملف مبيعات جديد", "Upload Sales CSV"), 
     type="csv", 
@@ -185,7 +193,7 @@ else:
 
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
-# 7️⃣ المعالجة الزمنية واختيار المتجر
+# ================== المعالجة الزمنية واختيار المتجر ==================
 if not df_active.empty:
     if 'date' in df_active.columns:
         df_active['date'] = pd.to_datetime(df_active['date'])
@@ -218,7 +226,7 @@ if not df_active.empty:
     )
     scen = scen_map[scen_label]
 
-    # 8️⃣ دالة حساب المقاييس الديناميكية
+    # --- دالة حساب المقاييس الديناميكية ---
     def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
         try:
             test_data = df_val.tail(15).copy()
@@ -247,7 +255,6 @@ if not df_active.empty:
 else:
     st.error("⚠️ فشل في تحميل البيانات.")
     st.stop()
-
 
 # ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features ==================
 
