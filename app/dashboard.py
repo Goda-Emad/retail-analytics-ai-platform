@@ -139,7 +139,7 @@ def apply_theme_css():
 
 apply_theme_css()
 
-# ================== 3️⃣ Forecast Engine & Plotly Charts (Premium Version) ==================
+# ================== 3️⃣ Forecast Engine & Plotly Charts (Premium Version - Professional) ==================
 
 # --- 0️⃣ تحديث ثيم الرسم والألوان حسب الوضع ---
 CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
@@ -159,6 +159,9 @@ feature_labels = {
     'is_weekend': t("عطلة نهاية الأسبوع", "Is Weekend"),
     'was_closed_yesterday': t("مغلق أمس", "Was Closed Yesterday")
 }
+
+# --- 1.1️⃣ تجهيز قائمة Features للموديل ---
+feature_names = list(feature_labels.keys())
 
 # --- 2️⃣ دالة التوقع الذكي مع حماية من الأخطاء ---
 def generate_forecast(hist, h, scen_val, res_std):
@@ -193,9 +196,9 @@ def generate_forecast(hist, h, scen_val, res_std):
             }
 
             X = pd.DataFrame([feats])[feature_names]
-            X_scaled = scaler.transform(X)
+            X_scaled = scaler.transform(X)  # تأكد من تحميل scaler قبل هذا الكود
 
-            p_log = model.predict(X_scaled)[0]
+            p_log = model.predict(X_scaled)[0]  # تأكد من تحميل model قبل هذا الكود
             p_log_safe = np.clip(p_log, 0, 12)
             p = np.expm1(p_log_safe) * scen_val
             p = min(p, logical_cap)
@@ -270,7 +273,7 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True, key=f"forecast_chart_{st.session_state['theme_state']}")
 
-# ================== 4️⃣ العرض البصري والنتائج ==================
+# ================== 4️⃣ العرض البصري والنتائج (Professional) ==================
 
 # --- إعداد ألوان حسب الثيم ---
 NEON_COLOR = "#00f2fe"
@@ -282,13 +285,13 @@ CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state['theme_state']=="Dar
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
 # --- KPIs ---
-p = np.nan_to_num(p)
+p = np.nan_to_num(p)  # حماية من NaN
 total_sales = float(np.sum(p))
 r2_safe = metrics.get("r2", 0.85)
 mape_safe = metrics.get("mape", 0.12)
 
 m1, m2, m3, m4 = st.columns(4)
-for m, label, val in zip([m1,m2,m3,m4],
+for m, label, val in zip([m1, m2, m3, m4],
                          [t("إجمالي المبيعات المتوقع","Expected Total Sales"),
                           t("دقة الموديل (R²)","Model Accuracy"),
                           t("نسبة الخطأ (MAPE)","Error Rate"),
@@ -298,12 +301,12 @@ for m, label, val in zip([m1,m2,m3,m4],
 
 st.divider()
 
-# --- الرسم التفاعلي مع Glass Effect ---
+# --- منحنى التوقعات المستقبلية مع Glass Effect ---
 st.subheader(t("📈 منحنى التوقعات المستقبلية (2026)","📈 Future Forecast Curve (2026)"))
 
 fig_trend = go.Figure()
 
-# نطاق الثقة
+# 1️⃣ نطاق الثقة
 fig_trend.add_trace(go.Scatter(
     x=np.concatenate([d, d[::-1]]),
     y=np.concatenate([u, l[::-1]]),
@@ -315,7 +318,7 @@ fig_trend.add_trace(go.Scatter(
     name=t("نطاق الثقة","Confidence Interval")
 ))
 
-# المبيعات التاريخية
+# 2️⃣ المبيعات التاريخية
 fig_trend.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
@@ -323,7 +326,7 @@ fig_trend.add_trace(go.Scatter(
     line=dict(color="#94a3b8"),
 ))
 
-# توقع AI
+# 3️⃣ توقع AI
 fig_trend.add_trace(go.Scatter(
     x=d,
     y=p,
@@ -331,20 +334,21 @@ fig_trend.add_trace(go.Scatter(
     line=dict(color=NEON_COLOR, width=4)
 ))
 
+# إعدادات الشكل العام
 fig_trend.update_layout(
     template=CHART_TEMPLATE,
     paper_bgcolor='rgba(255,255,255,0.1)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,0,0,0.3)',
     plot_bgcolor='rgba(255,255,255,0.05)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,0,0,0.1)',
     hovermode="x unified",
-    margin=dict(l=20,r=20,t=30,b=20),
+    margin=dict(l=20, r=20, t=30, b=20),
     title=dict(text=t("📈 توقع المبيعات القادمة","📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
     xaxis=dict(title=t("التاريخ","Date"), color=TEXT_COLOR),
     yaxis=dict(title=t("المبيعات","Sales"), color=TEXT_COLOR),
     legend=dict(font=dict(color=TEXT_COLOR))
 )
 
+# عرض الرسم التفاعلي
 st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_main_{st.session_state['theme_state']}")
-
 
 # ================== 5️⃣ تحليل توزيع الأخطاء (نسخة المهندس جودة المصححة) ==================
 st.markdown("---")
@@ -405,30 +409,28 @@ with col_err2:
     )
     # عرض رسمة التسلسل الزمني بكي مختلف تماماً
     st.plotly_chart(fig_res_time, use_container_width=True, key=f"time_{st.session_state['theme_state']}")
-    # ================== 6️⃣ Scenario Comparison (Final Production Version - Corrected) ==================
+   # ================== 6️⃣ Scenario Comparison (Corrected & Safe) ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
 
 # ⏳ Spinner لتحسين تجربة المستخدم أثناء الحساب
-with st.spinner(t("⏳ جاري حساب السيناريوهات المستقبلية...", 
-                  "⏳ Computing future forecast scenarios...")):
+with st.spinner(t("⏳ جاري حساب السيناريوهات المستقبلية...", "⏳ Computing future forecast scenarios...")):
 
     def get_forecast_safe(df, hor, scen_val, std):
+        """تحمي الدالة من أي خطأ أثناء التنبؤ"""
         try:
-            # محاولة استلام 4 قيم كما في الكود الأصلي
             res = generate_forecast(df, hor, scen_val, std)
-            if isinstance(res, tuple):
-                return res[0] # نأخذ القيمة الأولى فقط (التوقعات)
-            return res
+            if isinstance(res, tuple) and len(res) == 4:
+                return res[0]  # نأخذ التوقعات فقط
+            return np.zeros(hor)
         except Exception as e:
-            # في حالة حدوث أي خطأ نرجع مصفوفة أصفار بنفس الطول
+            st.warning(f"⚠️ خطأ أثناء توليد السيناريو: {e}")
             return np.zeros(hor)
 
-    # --- الحل السحري لمشكلة KeyError ---
-    # نستخدم دالة الترجمة t() داخل القاموس للوصول للمفتاح الصحيح حسب اللغة المفعلة
-    p_optimistic = get_forecast_safe(df_s, horizon, scen_map[t("متفائل", "Optimistic")], metrics['residuals_std'])
-    p_realistic = get_forecast_safe(df_s, horizon, scen_map[t("واقعي", "Realistic")], metrics['residuals_std'])
-    p_pessimistic = get_forecast_safe(df_s, horizon, scen_map[t("متشائم", "Pessimistic")], metrics['residuals_std'])
+    # توليد السيناريوهات الثلاثة بأمان
+    p_optimistic = get_forecast_safe(df_s, horizon, scen_map.get(t("متفائل", "Optimistic"), 1.0), metrics.get('residuals_std', 500))
+    p_realistic = get_forecast_safe(df_s, horizon, scen_map.get(t("واقعي", "Realistic"), 1.0), metrics.get('residuals_std', 500))
+    p_pessimistic = get_forecast_safe(df_s, horizon, scen_map.get(t("متشائم", "Pessimistic"), 1.0), metrics.get('residuals_std', 500))
 
 # 🧼 تنظيف القيم النهائية (Sanitization)
 p_optimistic = np.maximum(np.nan_to_num(p_optimistic), 0)
@@ -470,14 +472,17 @@ fig_scen.update_layout(
     margin=dict(l=20, r=20, t=60, b=20),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
+
 st.plotly_chart(fig_scen, use_container_width=True, key=f"scen_{st.session_state['theme_state']}")
+
 # 🛠️ Expander لشرح الـ Guardrail
 with st.expander(t("🛠️ كيف يضمن النظام واقعية التوقعات؟", "🛠️ How forecasts remain realistic?")):
     st.write(t(
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     ))
-# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة المعدلة ==================
+
+# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
@@ -486,7 +491,7 @@ if 'p' in locals() and len(p) > 0:
     # 1️⃣ تجهيز الأرقام للتحليل الاستراتيجي
     total_sales_val = np.sum(p)
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
-    current_lang_name = st.session_state.get('lang', 'عربي')
+    current_lang_name = st.session_state.get('lang_state', 'عربي')
 
     # عرض ملخص سريع للأرقام
     c1, c2 = st.columns(2)
@@ -505,19 +510,22 @@ if 'p' in locals() and len(p) > 0:
         )):
             # صياغة البرومت
             prompt_text = f"""
-            Act as a retail business expert. 
-            Analyze the following data for Store {selected_store}:
-            - Total Forecasted Sales: ${total_sales_val:,.0f}
-            - Expected Growth Rate: {growth_val:+.1f}%
-            Provide 3 specific, actionable business recommendations to improve performance.
-            Respond in {current_lang_name} language only.
-            """
+Act as a retail business expert.
+Analyze the following data for Store {selected_store}:
+- Total Forecasted Sales: ${total_sales_val:,.0f}
+- Expected Growth Rate: {growth_val:+.1f}%
+Provide 3 specific, actionable business recommendations to improve performance.
+Respond in {current_lang_name} language only.
+"""
 
             # استدعاء Gemini مع حماية الأخطاء
-            response_text = ask_gemini(prompt_text)
-            
+            try:
+                response_text = ask_gemini(prompt_text)
+            except Exception as e:
+                response_text = f"❌ حدث خطأ أثناء الاتصال بـ Gemini: {e}"
+
             st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
-            
+
             if response_text.startswith("❌"):
                 st.error(response_text)
                 st.warning(t(
@@ -530,6 +538,7 @@ if 'p' in locals() and len(p) > 0:
                     "✅ تم التحليل بنجاح بواسطة ذكاء ENG.GODA الاصطناعي",
                     "✅ Analysis Successful by ENG.GODA AI"
                 ))
+
 else:
     st.warning(t(
         "يرجى اختيار المتجر وتشغيل التنبؤ أولاً للحصول على استشارة.",
@@ -538,7 +547,7 @@ else:
 
 # ================== 🔗 الروابط المهنية ==================
 st.write("")
-st.write("---")
+st.markdown("---")
 col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
 
 with col_f1:
