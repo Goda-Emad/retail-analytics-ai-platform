@@ -5,24 +5,42 @@ import plotly.graph_objects as go
 import joblib, os, time
 import requests
 
-# ================== 1️⃣ إعداد Gemini عبر REST API (تعديل ENG.GODA) ==================
+# ================== 1️⃣ إعداد Gemini عبر REST API (نسخة محسّنة ENG.GODA) ==================
 
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
+def get_available_gemini_model():
+    """
+    تختار أول موديل متاح يدعم generateContent لتجنب 404
+    """
+    if not GEMINI_API_KEY:
+        return None
+    headers = {"Authorization": f"Bearer {GEMINI_API_KEY}"}
+    url = "https://generativelanguage.googleapis.com/v1beta/models"
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        models = resp.json().get("models", [])
+        for m in models:
+            if "generateContent" in m.get("supportedGenerationMethods", []):
+                return m["name"]
+    except Exception as e:
+        st.warning(f"⚠️ خطأ أثناء جلب الموديلات: {e}")
+    return None
+
 def ask_gemini(prompt_text):
     """
-    حل مشكلة الـ 404: تم تحديث الرابط لـ v1beta لأن موديل Flash يتطلب ذلك أحياناً
+    استدعاء Gemini مع حماية 404 واختيار الموديل الصحيح تلقائيًا
     """
     if not GEMINI_API_KEY:
         return "❌ GEMINI_API_KEY غير موجود في الإعدادات (Secrets)."
+    
+    model_name = get_available_gemini_model()
+    if not model_name:
+        return "❌ لم يتم العثور على أي موديل Gemini صالح يدعم generateContent."
 
-    # التعديل لضمان عدم حدوث 404
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt_text}]}]
-    }
+    payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
 
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=20)
@@ -60,14 +78,14 @@ with st.sidebar:
     lang_choice = st.radio("Language / اللغة", ["عربي", "English"], index=0 if st.session_state['lang'] == 'عربي' else 1)
     st.session_state['lang'] = lang_choice
 
-    # اختيار الثيم (تعريف المتغير theme_choice قبل استخدامه في الأجزاء 4 و 5)
+    # اختيار الثيم
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"),
         options=["Dark Mode", "Light Mode"],
         index=1
     )
 
-# تعريف متغيرات الثيم بناءً على الاختيار (لتكون متاحة لكل الكود)
+# تعريف متغيرات الثيم
 CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
 
@@ -89,6 +107,7 @@ model, scaler, feature_names, df_raw = load_assets()
 
 if model is None:
     st.stop()
+
 
 # ================== 2️⃣ السايدبار، المعالجة، وحساب المقاييس الذكي ==================
 
@@ -493,20 +512,18 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
- # ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
+# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة المعدلة ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
-# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI (متغير p هو مخرجات التنبؤ)
+# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI
 if 'p' in locals() and len(p) > 0:
-    # 1. تجهيز الأرقام للتحليل الاستراتيجي
+    # 1️⃣ تجهيز الأرقام للتحليل الاستراتيجي
     total_sales_val = np.sum(p)
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
-    
-    # تحديد لغة الرد بناءً على اختيار المستخدم
     current_lang_name = st.session_state.get('lang', 'عربي')
 
-    # عرض ملخص سريع للأرقام قبل الاستشارة
+    # عرض ملخص سريع للأرقام
     c1, c2 = st.columns(2)
     with c1:
         st.metric(t("إجمالي المتوقع", "Total Forecast"), f"${total_sales_val:,.0f}")
@@ -515,11 +532,13 @@ if 'p' in locals() and len(p) > 0:
 
     st.markdown("---")
 
-    # 2. زر استدعاء Gemini (باستخدام دالة ask_gemini المعدلة في الجزء الأول)
+    # 2️⃣ زر استدعاء Gemini
     if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final_rest"):
-        with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً عبر ENG.GODA Engine...", "🧠 Analyzing data strategically...")):
-
-            # صياغة البرومت الموجه للموديل
+        with st.spinner(t(
+            "🧠 جارٍ تحليل البيانات استراتيجياً عبر ENG.GODA Engine...",
+            "🧠 Analyzing data strategically..."
+        )):
+            # صياغة البرومت
             prompt_text = f"""
             Act as a retail business expert. 
             Analyze the following data for Store {selected_store}:
@@ -529,22 +548,30 @@ if 'p' in locals() and len(p) > 0:
             Respond in {current_lang_name} language only.
             """
 
-            # استدعاء Gemini (الدالة الموجودة في الجزء الأول)
+            # استدعاء Gemini مع حماية الأخطاء
             response_text = ask_gemini(prompt_text)
             
             st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
             
             if response_text.startswith("❌"):
                 st.error(response_text)
-                st.warning(t("تأكد من تحديث GEMINI_API_KEY في صفحة Secrets.", "Please update GEMINI_API_KEY in Secrets page."))
+                st.warning(t(
+                    "تأكد من تحديث GEMINI_API_KEY في صفحة Secrets.",
+                    "Please update GEMINI_API_KEY in Secrets page."
+                ))
             else:
                 st.info(response_text)
-                st.success(t("✅ تم التحليل بنجاح بواسطة ذكاء ENG.GODA الاصطناعي", "✅ Analysis Successful by ENG.GODA AI"))
-
+                st.success(t(
+                    "✅ تم التحليل بنجاح بواسطة ذكاء ENG.GODA الاصطناعي",
+                    "✅ Analysis Successful by ENG.GODA AI"
+                ))
 else:
-    st.warning(t("يرجى اختيار المتجر وتشغيل التنبؤ أولاً للحصول على استشارة.", "Please select a store and run forecast first."))
+    st.warning(t(
+        "يرجى اختيار المتجر وتشغيل التنبؤ أولاً للحصول على استشارة.",
+        "Please select a store and run forecast first."
+    ))
 
-# ================== 🔗 الروابط المهنية (ENG.GODA EMAD Edition) ==================
+# ================== 🔗 الروابط المهنية ==================
 st.write("")
 st.write("---")
 col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
