@@ -5,20 +5,24 @@ import plotly.graph_objects as go
 import joblib, os, time
 import google.generativeai as genai
 
-# إعداد الربط بالمفتاح الجديد (GODA) مع تفعيل بروتوكول REST لضمان العمل على السحابة
+# إعدادات بيئة العمل لتخطي مشاكل الشبكة
+os.environ["GRPC_VERBOSITY"] = "ERROR"
+
+# إعداد الربط بالمفتاح الجديد (GODA) مع إجبار المسار العالمي
 genai.configure(
-    api_key="AIzaSyCJPsGXAUYUuC8XguAJ_t5AKRgCcQrTLz0", # المفتاح الجديد بتاعك
-    transport='rest' # السطر ده هو اللي هيخلي الكود يشتغل في مصر وعلى السيرفرات السحابية
+    api_key="AIzaSyCJPsGXAUYUuC8XguAJ_t5AKRgCcQrTLz0",
+    transport='rest',
+    client_options={'api_endpoint': 'generativelanguage.googleapis.com'}
 )
 
-# تعريف الموديل ليكون جاهزاً للاستخدام في الجزء السابع
+# تعريف الموديل
 gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 # استكمال باقي الاستدعاءات
 try:
     from utils import run_backtesting
 except ImportError:
-    pass # أو تعامل مع الخطأ لو ملف utils مش موجود
+    pass
 
 # ================== إعدادات الصفحة ==================
 MODEL_VERSION = "v5.6 (Final Fix)"
