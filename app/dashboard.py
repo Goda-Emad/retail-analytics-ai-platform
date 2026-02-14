@@ -109,37 +109,44 @@ if model is None:
     st.stop()
 
 
-# ================== 2️⃣ السايدبار، المترجم، والثيم الذكي ==================
+# ================== 2️⃣ السايدبار، المترجم، والثيم الذكي (النسخة النهائية الصافية) ==================
 
-# 1. تهيئة حالة اللغة في الـ Session State (عشان المترجم يفضل شغال)
+# 1. تهيئة حالة اللغة
 if 'lang_state' not in st.session_state:
     st.session_state['lang_state'] = "عربي"
 
-# 2. السايدبار - اختيار اللغة
-selected_lang = st.sidebar.selectbox(
-    "🌐 Choose Language / اختر اللغة", 
-    ["عربي", "English"],
-    index=0 if st.session_state['lang_state'] == "عربي" else 1
-)
-st.session_state['lang_state'] = selected_lang
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    
+    # 2. اختيار اللغة مع Key فريد لمنع التكرار
+    selected_lang = st.selectbox(
+        "🌐 Choose Language / اختر اللغة", 
+        ["عربي", "English"],
+        index=0 if st.session_state['lang_state'] == "عربي" else 1,
+        key="main_lang_selector"
+    )
+    st.session_state['lang_state'] = selected_lang
 
-# 3. دالة الترجمة الشاملة (ستستخدمها في كل الأجزاء القادمة)
-def t(ar, en):
-    return ar if st.session_state['lang_state'] == "عربي" else en
+    # 3. دالة الترجمة الشاملة
+    def t(ar, en):
+        return ar if st.session_state['lang_state'] == "عربي" else en
 
-# 4. اختيار الثيم (حل مشكلة NameError للسطر 237)
-theme_choice = st.sidebar.selectbox(
-    t("🎨 اختيار الثيم", "🎨 Select Theme"), 
-    ["Dark Mode", "Light Mode"], 
-    index=1
-)
+    # 4. اختيار الثيم مع Key فريد (يحل مشكلة سطر 131)
+    theme_choice = st.selectbox(
+        t("🎨 اختيار الثيم", "🎨 Select Theme"), 
+        ["Dark Mode", "Light Mode"], 
+        index=1,
+        key="main_theme_selector"
+    )
+
+# تعريف متغيرات الثيم مرة واحدة للتطبيق كله
 CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
 
 st.sidebar.divider()
 
-# 5. رفع الملفات ومعالجة البيانات
-uploaded = st.sidebar.file_uploader(t("رفع ملف مبيعات جديد", "Upload Sales CSV"), type="csv")
+# 5. رفع الملفات (مع إضافة Key فريد)
+uploaded = st.sidebar.file_uploader(t("رفع ملف مبيعات جديد", "Upload Sales CSV"), type="csv", key="sales_uploader")
 df_active = pd.read_csv(uploaded) if uploaded else df_raw.copy()
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
@@ -147,14 +154,13 @@ if 'date' in df_active.columns:
     df_active['date'] = pd.to_datetime(df_active['date'])
     df_active = df_active.sort_values('date').set_index('date')
 
-# 6. اختيار المتجر وإعدادات التوقع
+# 6. اختيار المتجر وإعدادات التوقع (مع إضافة Keys فريدة)
 store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
-selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list)
-df_s = df_active[df_active['store_id']==selected_store] if 'store_id' in df_active.columns else df_active
+selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list, key="store_selector")
 
-horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14)
+horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14, key="horizon_slider")
 scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
-scen = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"))
+scen = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"), key="scenario_slider")
 
 # --- دالة حساب المقاييس (المحرك الداخلي) ---
 def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
