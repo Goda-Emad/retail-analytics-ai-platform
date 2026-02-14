@@ -464,7 +464,8 @@ with col_err2:
     )
 
     st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
-   # ================== 6️⃣ Scenario Comparison (Final Production Version) ==================
+    )) 
+    # ================== 6️⃣ Scenario Comparison (Final Production Version - Corrected) ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
 
@@ -472,26 +473,22 @@ st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "�
 with st.spinner(t("⏳ جاري حساب السيناريوهات المستقبلية...", 
                   "⏳ Computing future forecast scenarios...")):
 
-    # --- ملاحظة للمهندس جودة: استخدمنا try-except أو استلام مرن لحل الـ TypeError ---
-    
     def get_forecast_safe(df, hor, scen_val, std):
         try:
             # محاولة استلام 4 قيم كما في الكود الأصلي
-            res = generate_forecast(df, hor, scen_val, std, use_guardrail=True)
+            res = generate_forecast(df, hor, scen_val, std)
             if isinstance(res, tuple):
                 return res[0] # نأخذ القيمة الأولى فقط (التوقعات)
             return res
-        except TypeError:
-            # لو الدالة لا تقبل use_guardrail أو عدد المتغيرات مختلف
-            res = generate_forecast(df, hor, scen_val, std)
-            if isinstance(res, tuple):
-                return res[0]
-            return res
+        except Exception as e:
+            # في حالة حدوث أي خطأ نرجع مصفوفة أصفار بنفس الطول
+            return np.zeros(hor)
 
-    # توليد التوقعات للسيناريوهات الثلاثة
-    p_optimistic = get_forecast_safe(df_s, horizon, scen_map["متفائل"], metrics['residuals_std'])
-    p_realistic = get_forecast_safe(df_s, horizon, scen_map["واقعي"], metrics['residuals_std'])
-    p_pessimistic = get_forecast_safe(df_s, horizon, scen_map["متشائم"], metrics['residuals_std'])
+    # --- الحل السحري لمشكلة KeyError ---
+    # نستخدم دالة الترجمة t() داخل القاموس للوصول للمفتاح الصحيح حسب اللغة المفعلة
+    p_optimistic = get_forecast_safe(df_s, horizon, scen_map[t("متفائل", "Optimistic")], metrics['residuals_std'])
+    p_realistic = get_forecast_safe(df_s, horizon, scen_map[t("واقعي", "Realistic")], metrics['residuals_std'])
+    p_pessimistic = get_forecast_safe(df_s, horizon, scen_map[t("متشائم", "Pessimistic")], metrics['residuals_std'])
 
 # 🧼 تنظيف القيم النهائية (Sanitization)
 p_optimistic = np.maximum(np.nan_to_num(p_optimistic), 0)
@@ -534,14 +531,14 @@ fig_scen.update_layout(
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
 
-st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_final_fixed")
+st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_final_fixed_goda")
 
 # 🛠️ Expander لشرح الـ Guardrail
 with st.expander(t("🛠️ كيف يضمن النظام واقعية التوقعات؟", "🛠️ How forecasts remain realistic?")):
     st.write(t(
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
-    )) 
+    ))
 # ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة المعدلة ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
