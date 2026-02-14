@@ -145,8 +145,8 @@ with st.sidebar:
 # ================== 4️⃣ العرض البصري والنتائج (Enhanced & Secure) ==================
 
 # ==== 0️⃣ حماية المتغيرات الأساسية ====
-selected_store = st.session_state.get("selected_store", "Main Store")  # اسم المتجر الافتراضي
-horizon = st.session_state.get("horizon", 30)                          # عدد الأيام للتوقع
+selected_store = st.session_state.get("selected_store", "Main Store")
+horizon = st.session_state.get("horizon", 30)
 
 # توقعات المبيعات ونطاق الثقة
 if 'p' not in locals() or p is None:
@@ -158,21 +158,24 @@ if 'u' not in locals() or u is None:
 if 'l' not in locals() or l is None:
     l = np.zeros_like(p)
 
-# ==== 1️⃣ ألوان ديناميكية حسب الثيم ====
+# ==== 1️⃣ حماية metrics ====
+metrics_safe = metrics if 'metrics' in locals() else {}
+r2_safe = metrics_safe.get("r2", 0.85)
+mape_safe = metrics_safe.get("mape", 0.12)
+inference_time = metrics_safe.get("execution_time", 0.14)
+
+# ==== 2️⃣ ألوان ديناميكية حسب الثيم ====
 NEON_COLOR = "#00f2fe"
 BAR_COLOR = "#00f2fe" if st.session_state['theme_state']=="Dark Mode" else "#0077ff"
 TEXT_COLOR = "#ffffff" if st.session_state['theme_state']=="Dark Mode" else "#31333F"
 CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(0,242,254,0.15)'
 
-# ==== 2️⃣ العنوان الرئيسي ====
+# ==== 3️⃣ العنوان الرئيسي ====
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
-# ==== 3️⃣ KPIs ====
+# ==== 4️⃣ KPIs ====
 p_safe = np.nan_to_num(p)
 total_sales = float(np.sum(p_safe))
-r2_safe = metrics.get("r2", 0.85)
-mape_safe = metrics.get("mape", 0.12)
-inference_time = metrics.get("execution_time", 0.14)
 
 kpi_cols = st.columns(4)
 kpi_values = [
@@ -187,7 +190,7 @@ for col, (label, val) in zip(kpi_cols, kpi_values):
 
 st.divider()
 
-# ==== 4️⃣ الرسم التفاعلي مع Glass Effect ====
+# ==== 5️⃣ الرسم التفاعلي مع Glass Effect ====
 st.subheader(t("📈 منحنى التوقعات المستقبلية","📈 Future Forecast Curve"))
 
 fig_trend = go.Figure()
