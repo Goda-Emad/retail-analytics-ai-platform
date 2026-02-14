@@ -1,22 +1,14 @@
-# واجهة التطبيق
+# الأساسيات
 streamlit
-
-# التعامل مع البيانات
 pandas
 numpy
-pyarrow  # لقراءة ملفات Parquet بسرعة
+pyarrow
 
-# نموذج التنبؤ
+# الذكاء الاصطناعي والتنبؤ
 catboost
 scikit-learn
-joblib  # لحفظ وتحميل النماذج
+joblib
 
-# الرسوم البيانية
+# الرسوم البيانية والاتصال
 plotly
-
-# لو حابب تعمل API خارجية (اختياري)
-fastapi
-uvicorn
-
-# Gemini AI (يفضل نسخة >=0.7.2)
-google-generativeai==0.8.3
+requests
