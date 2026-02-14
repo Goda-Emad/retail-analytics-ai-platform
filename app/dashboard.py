@@ -381,7 +381,7 @@ fig.update_layout(
     height=450
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_{st.session_state['theme_state']}")
 
 # --- 3️⃣ تقسيم العرض (العوامل المؤثرة والجدول التفصيلي) ---
 col_left, col_right = st.columns([1, 1.2])
@@ -468,8 +468,7 @@ with col_err1:
         margin=dict(l=20, r=20, t=40, b=20)
     )
 
-    st.plotly_chart(fig_hist, use_container_width=True, key="error_hist_chart")
-
+st.plotly_chart(fig_res_time, use_container_width=True, key=f"err_{st.session_state['theme_state']}")
 # ================== 2️⃣ الأخطاء عبر الزمن ==================
 with col_err2:
     fig_res_time = go.Figure()
@@ -492,8 +491,7 @@ with col_err2:
         margin=dict(l=20, r=20, t=40, b=20),
         hovermode="x unified"
     )
-
-    st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
+st.plotly_chart(fig_res_time, use_container_width=True, key=f"err_{st.session_state['theme_state']}")
     
     # ================== 6️⃣ Scenario Comparison (Final Production Version - Corrected) ==================
 st.markdown("---")
@@ -560,9 +558,7 @@ fig_scen.update_layout(
     margin=dict(l=20, r=20, t=60, b=20),
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
-
-st.plotly_chart(fig_scen, use_container_width=True, key="scenarios_final_fixed_goda")
-
+st.plotly_chart(fig_scen, use_container_width=True, key=f"scen_{st.session_state['theme_state']}")
 # 🛠️ Expander لشرح الـ Guardrail
 with st.expander(t("🛠️ كيف يضمن النظام واقعية التوقعات؟", "🛠️ How forecasts remain realistic?")):
     st.write(t(
