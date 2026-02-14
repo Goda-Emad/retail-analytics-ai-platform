@@ -256,12 +256,30 @@ else:
     st.error("⚠️ فشل في تحميل البيانات.")
     st.stop()
 
-# ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features (محدث) ==================
+# ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features (نسخة Glassmorphic + Dark/Light) ==================
 
 # --- 0️⃣ تحديث ثيم الرسم والألوان حسب الوضع ---
 CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
-CONFIDENCE_FILL = 'rgba(0,242,254,0.15)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(255,127,14,0.2)'
+CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state["theme_state"]=="Dark Mode" else 'rgba(255,127,14,0.2)'
+BG_COLOR = 'rgba(14,17,23,0.7)' if st.session_state["theme_state"]=="Dark Mode" else 'rgba(255,255,255,0.7)'
+TEXT_COLOR = "#ffffff" if st.session_state["theme_state"]=="Dark Mode" else "#31333F"
+BAR_COLOR = "#00f2fe" if st.session_state["theme_state"]=="Dark Mode" else "#0077ff"
+
+# --- Glassmorphic Background CSS ---
+st.markdown(f"""
+<style>
+.stApp {{
+    background: linear-gradient(135deg, rgba(0,0,0,0.5), rgba(0,0,0,0.1));
+}}
+.stAppViewContainer, .stMain {{
+    backdrop-filter: blur(15px);
+    background: {BG_COLOR};
+    border-radius: 15px;
+    padding: 10px;
+}}
+</style>
+""", unsafe_allow_html=True)
 
 # --- 1️⃣ ترجمة الـ Features ---
 feature_labels = {
@@ -281,244 +299,185 @@ feature_labels = {
 def generate_forecast(hist, h, scen_val, res_std):
     np.random.seed(42)
     preds, lows, ups = [], [], []
-    
     mean_sales = float(hist['sales'].mean())
     start_date = pd.Timestamp.now().normalize()
-    logical_cap = hist['sales'].max() * 5 if hist['sales'].max() > 0 else 1000000
+    logical_cap = hist['sales'].max() * 5 if hist['sales'].max() > 0 else 1_000_000
     actual_std = hist['sales'].std()
-    safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 500)
-    
-    temp_sales_buffer = list(hist['sales'].tail(30).values)
+    safe_std = res_std if 0 < res_std < (actual_std*3) else (actual_std if actual_std>0 else 500)
+    buffer = list(hist['sales'].tail(30).values)
     forecast_dates = []
 
     for i in range(h):
         nxt = start_date + pd.Timedelta(days=i+1)
         forecast_dates.append(nxt)
-        
         feats = {
-            'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 
+            'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7),
             'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
-            'month_sin': np.sin(2*np.pi*(nxt.month-1)/12), 
+            'month_sin': np.sin(2*np.pi*(nxt.month-1)/12),
             'month_cos': np.cos(2*np.pi*(nxt.month-1)/12),
-            'lag_1': float(temp_sales_buffer[-1]), 
-            'lag_7': float(temp_sales_buffer[-7] if len(temp_sales_buffer)>=7 else mean_sales),
-            'rolling_mean_7': float(np.mean(temp_sales_buffer[-7:])), 
-            'rolling_mean_14': float(np.mean(temp_sales_buffer[-14:])),
-            'is_weekend': 1 if nxt.dayofweek>=5 else 0, 
-            'was_closed_yesterday': 1 if temp_sales_buffer[-1]<=0 else 0
+            'lag_1': float(buffer[-1]),
+            'lag_7': float(buffer[-7] if len(buffer)>=7 else mean_sales),
+            'rolling_mean_7': float(np.mean(buffer[-7:])),
+            'rolling_mean_14': float(np.mean(buffer[-14:])),
+            'is_weekend': 1 if nxt.dayofweek>=5 else 0,
+            'was_closed_yesterday': 1 if buffer[-1]<=0 else 0
         }
-        
         X = pd.DataFrame([feats])[feature_names]
         X_scaled = scaler.transform(X)
-        
         p_log = model.predict(X_scaled)[0]
-        p_log_safe = np.clip(p_log, 0, 12)
-        p = np.expm1(p_log_safe) * scen_val
+        p_log_safe = np.clip(p_log,0,12)
+        p = np.expm1(p_log_safe)*scen_val
         p = min(p, logical_cap)
-        boost = 1.96 * safe_std * np.sqrt(i + 1)
-        
+        boost = 1.96*safe_std*np.sqrt(i+1)
         preds.append(float(p))
-        lows.append(float(max(0, p - boost)))
-        ups.append(float(min(p + boost, logical_cap * 1.2)))
-        
-        temp_sales_buffer.append(p)
-        
+        lows.append(float(max(0,p-boost)))
+        ups.append(float(min(p+boost, logical_cap*1.2)))
+        buffer.append(p)
     return preds, lows, ups, pd.DatetimeIndex(forecast_dates)
 
 # --- 3️⃣ تنفيذ التوقع ---
 p, l, u, d = generate_forecast(df_s, horizon, scen, metrics['residuals_std'])
 
-# --- 4️⃣ رسم Plotly ديناميكي حسب الثيم ---
+# --- 4️⃣ Plotly Chart رئيسي مع ثيم وGlass effect ---
 fig = go.Figure()
-
-# Actual Sales
-fig.add_trace(go.Scatter(
-    x=df_s.index[-60:], y=df_s['sales'].tail(60),
-    mode='lines+markers',
-    name=t("المبيعات الفعلية", "Actual Sales"),
-    line=dict(color=NEON_COLOR),
-    marker=dict(size=6),
-    hovertemplate='%{x|%Y-%m-%d} <br>Sales: %{y:.0f}<extra></extra>'
-))
+# Actual
+fig.add_trace(go.Scatter(x=df_s.index[-60:], y=df_s['sales'].tail(60),
+                         mode='lines+markers',
+                         name=t("المبيعات الفعلية","Actual Sales"),
+                         line=dict(color=NEON_COLOR),
+                         marker=dict(size=6),
+                         hovertemplate='%{x|%Y-%m-%d}<br>Sales: %{y:.0f}<extra></extra>'))
 
 # Forecast
-fig.add_trace(go.Scatter(
-    x=d, y=p,
-    mode='lines+markers',
-    name=t("توقع المبيعات", "Forecast Sales"),
-    line=dict(color="#ff7f0e"),
-    marker=dict(size=6),
-    hovertemplate='%{x|%Y-%m-%d} <br>Forecast: %{y:.0f}<extra></extra>'
-))
+fig.add_trace(go.Scatter(x=d, y=p,
+                         mode='lines+markers',
+                         name=t("توقع المبيعات","Forecast Sales"),
+                         line=dict(color="#ff7f0e"),
+                         marker=dict(size=6),
+                         hovertemplate='%{x|%Y-%m-%d}<br>Forecast: %{y:.0f}<extra></extra>'))
 
 # Confidence Interval
-fig.add_trace(go.Scatter(
-    x=list(d)+list(d[::-1]),
-    y=list(l)+list(u[::-1]),
-    fill='toself',
-    fillcolor=CONFIDENCE_FILL,
-    line=dict(color='rgba(255,255,255,0)'),
-    hoverinfo="skip",
-    showlegend=True,
-    name=t("نطاق الثقة", "Confidence Interval")
-))
+fig.add_trace(go.Scatter(x=list(d)+list(d[::-1]),
+                         y=list(l)+list(u[::-1]),
+                         fill='toself',
+                         fillcolor=CONFIDENCE_FILL,
+                         line=dict(color='rgba(255,255,255,0)'),
+                         hoverinfo="skip",
+                         showlegend=True,
+                         name=t("نطاق الثقة","Confidence Interval")))
 
 fig.update_layout(
     template=CHART_TEMPLATE,
-    title=t("📈 توقع المبيعات القادمة", "📈 Upcoming Sales Forecast"),
-    xaxis_title=t("التاريخ", "Date"),
-    yaxis_title=t("المبيعات", "Sales"),
-    hovermode="x unified",
+    title=dict(text=t("📈 توقع المبيعات القادمة","📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
+    xaxis=dict(title=t("التاريخ","Date"), color=TEXT_COLOR),
+    yaxis=dict(title=t("المبيعات","Sales"), color=TEXT_COLOR),
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    hovermode="x unified"
 )
 
 st.plotly_chart(fig, use_container_width=True, key=f"forecast_chart_{st.session_state['theme_state']}")
-# ================== 4️⃣ العرض البصري والنتائج (محدث لتجنب تكرار yaxis) ==================
 
-# إعدادات الثيم والألوان
-NEON_COLOR = "#00f2fe"
-CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(0,242,254,0.15)'
-BAR_COLOR = "#00f2fe" if st.session_state['theme_state']=="Dark Mode" else "#0077ff"
-TEXT_COLOR = "#ffffff" if st.session_state['theme_state']=="Dark Mode" else "#31333F"
-BG_COLOR = "#0e1117" if st.session_state['theme_state']=="Dark Mode" else "#ffffff"
+# ================== 4️⃣ العرض البصري والنتائج ==================
+st.title(f"📈 {t('ذكاء مبيعات التجزئة','Retail Sales Intelligence')} | {selected_store}")
 
-# العنوان الرئيسي
-st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
-
-# الإحصائيات العليا (KPIs)
-p = np.nan_to_num(p)
+# KPIs
 total_sales = float(np.sum(p))
-r2_safe = metrics.get("r2", 0.85)
-mape_safe = metrics.get("mape", 0.12)
-
-m1, m2, m3, m4 = st.columns(4)
-for m, label, val in zip([m1,m2,m3,m4],
-                         [t("إجمالي المبيعات المتوقع", "Expected Total Sales"),
-                          t("دقة الموديل (R²)", "Model Accuracy"),
-                          t("نسبة الخطأ (MAPE)", "Error Rate"),
-                          t("زمن المعالجة", "Inference Time")],
-                         [f"${total_sales:,.0f}", f"{r2_safe:.3f}", f"{mape_safe*100:.1f}%", "0.14 s"]):
-    m.metric(label, val)
+r2_safe = metrics.get("r2",0.85)
+mape_safe = metrics.get("mape",0.12)
+m1,m2,m3,m4 = st.columns(4)
+for m,label,val in zip([m1,m2,m3,m4],
+                       [t("إجمالي المبيعات المتوقع","Expected Total Sales"),
+                        t("دقة الموديل (R²)","Model Accuracy"),
+                        t("نسبة الخطأ (MAPE)","Error Rate"),
+                        t("زمن المعالجة","Inference Time")],
+                       [f"${total_sales:,.0f}",f"{r2_safe:.3f}",f"{mape_safe*100:.1f}%","0.14 s"]):
+    m.metric(label,val)
 
 st.divider()
 
-# رسم المنحنى التفاعلي
-st.subheader(t("📈 منحنى التوقعات المستقبلية (2026)", "📈 Future Forecast Curve (2026)"))
-
+# Trend Chart مع Glass Effect
 fig_trend = go.Figure()
-
-# نطاق الثقة
+# Confidence Interval
 fig_trend.add_trace(go.Scatter(
-    x=np.concatenate([d, d[::-1]]),
-    y=np.concatenate([u, l[::-1]]),
+    x=np.concatenate([d,d[::-1]]),
+    y=np.concatenate([u,l[::-1]]),
     fill='toself',
     fillcolor=CONFIDENCE_FILL,
     line=dict(color='rgba(0,0,0,0)'),
     hoverinfo="skip",
     showlegend=True,
-    name=t("نطاق الثقة", "Confidence Interval")
+    name=t("نطاق الثقة","Confidence Interval")
 ))
-
-# المبيعات التاريخية
+# Actual Sales
 fig_trend.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
-    name=t("مبيعات سابقة", "Actual Sales"),
-    line=dict(color="#94a3b8"),
+    name=t("مبيعات سابقة","Actual Sales"),
+    line=dict(color="#94a3b8")
 ))
-
-# توقع AI
+# AI Forecast
 fig_trend.add_trace(go.Scatter(
-    x=d,
-    y=p,
-    name=t("توقع الذكاء الاصطناعي", "AI Forecast"),
+    x=d, y=p,
+    name=t("توقع الذكاء الاصطناعي","AI Forecast"),
     line=dict(color=NEON_COLOR, width=4)
 ))
-
 fig_trend.update_layout(
     template=CHART_TEMPLATE,
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(0,0,0,0)',
     hovermode="x unified",
-    margin=dict(l=20, r=20, t=30, b=20),
-    title=dict(text=t("📈 توقع المبيعات القادمة", "📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
-    xaxis=dict(title=t("التاريخ", "Date"), color=TEXT_COLOR),
-    yaxis=dict(color=TEXT_COLOR, categoryorder='total ascending', title=t("المبيعات", "Sales")),
+    margin=dict(l=20,r=20,t=30,b=20),
+    title=dict(text=t("📈 توقع المبيعات القادمة","📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
+    xaxis=dict(title=t("التاريخ","Date"), color=TEXT_COLOR),
+    yaxis=dict(title=t("المبيعات","Sales"), color=TEXT_COLOR),
     legend=dict(font=dict(color=TEXT_COLOR))
 )
-
 st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_main_{st.session_state['theme_state']}")
 
-# العوامل المؤثرة والجدول التفصيلي
-col_left, col_right = st.columns([1, 1.2])
-
-# العوامل المؤثرة
+# Feature Importance & Table (Dark/Light Mode Glass)
+col_left,col_right = st.columns([1,1.2])
 with col_left:
-    st.subheader(t("🎯 العوامل المؤثرة", "🎯 Key Drivers"))
-    feat_ar = {
-        'lag_1': "مبيعات أمس", 'lag_7': "مبيعات الأسبوع الماضي",
-        'rolling_mean_7': "متوسط 7 أيام", 'rolling_mean_14': "متوسط 14 يوم",
-        'is_weekend': "عطلة نهاية الأسبوع", 'was_closed_yesterday': "إغلاق أمس",
-        'dayofweek_sin': "دورة الأسبوع 1", 'dayofweek_cos': "دورة الأسبوع 2",
-        'month_sin': "الموسمية 1", 'month_cos': "الموسمية 2"
-    }
-    
-    try:
-        importances = model.feature_importances_
-    except:
-        importances = np.zeros(len(feature_names))
+    st.subheader(t("🎯 العوامل المؤثرة","🎯 Key Drivers"))
+    feat_ar = {'lag_1':"مبيعات أمس",'lag_7':"مبيعات الأسبوع الماضي",
+               'rolling_mean_7':"متوسط 7 أيام",'rolling_mean_14':"متوسط 14 يوم",
+               'is_weekend':"عطلة نهاية الأسبوع",'was_closed_yesterday':"إغلاق أمس",
+               'dayofweek_sin':"دورة الأسبوع 1",'dayofweek_cos':"دورة الأسبوع 2",
+               'month_sin':"الموسمية 1",'month_cos':"الموسمية 2"}
+    try: importances = model.feature_importances_
+    except: importances = np.zeros(len(feature_names))
+    names = [feat_ar.get(n,n) for n in feature_names] if st.session_state["lang_state"]=="عربي" else feature_names
 
-    names = [feat_ar.get(n, n) for n in feature_names] if st.session_state['lang_state']=="عربي" else feature_names
-    
     fig_imp = go.Figure(go.Bar(
-        x=importances,
-        y=names,
-        orientation='h',
+        x=importances, y=names, orientation='h',
         marker=dict(color=BAR_COLOR)
     ))
     fig_imp.update_layout(
         template=CHART_TEMPLATE,
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        margin=dict(l=10, r=10, t=10, b=10),
-        title=dict(text=t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers Importance"), font=dict(color=TEXT_COLOR)),
+        yaxis={'categoryorder':'total ascending'},
+        margin=dict(l=10,r=10,t=10,b=10),
+        title=dict(text=t("🎯 أهم العوامل المؤثرة","🎯 Key Drivers Importance"), font=dict(color=TEXT_COLOR)),
         xaxis=dict(color=TEXT_COLOR),
-        yaxis=dict(color=TEXT_COLOR, categoryorder='total ascending')
+        yaxis=dict(color=TEXT_COLOR)
     )
     st.plotly_chart(fig_imp, use_container_width=True, key=f"imp_{st.session_state['theme_state']}")
 
-# الجدول التفصيلي
 with col_right:
-    st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast"))
+    st.subheader(t("📥 جدول البيانات بالتفصيل","📥 Detailed Forecast"))
     res_df = pd.DataFrame({
-        t("التاريخ", "Date"): pd.to_datetime(d).strftime("%Y-%m-%d"),
-        t("التوقع", "Forecast"): p,
-        t("الأدنى", "Min"): l,
-        t("الأقصى", "Max"): u
+        t("التاريخ","Date"): pd.to_datetime(d).strftime("%Y-%m-%d"),
+        t("التوقع","Forecast"): p,
+        t("الأدنى","Min"): l,
+        t("الأقصى","Max"): u
     })
-
-    # تعديل ستايل الجدول حسب الثيم
-    if st.session_state['theme_state'] == "Dark Mode":
-        table_style = res_df.style.set_table_styles([{
-            'selector': 'thead',
-            'props': [('background-color', '#1e2130'), ('color', '#ffffff')]
-        }, {
-            'selector': 'tbody',
-            'props': [('background-color', '#161b22'), ('color', '#ffffff')]
-        }])
-    else:
-        table_style = res_df.style.set_table_styles([{
-            'selector': 'thead',
-            'props': [('background-color', '#f0f2f6'), ('color', '#000000')]
-        }, {
-            'selector': 'tbody',
-            'props': [('background-color', '#ffffff'), ('color', '#000000')]
-        }])
-
-    st.dataframe(table_style.format({
-        res_df.columns[1]: "${:,.0f}", 
-        res_df.columns[2]: "${:,.0f}", 
-        res_df.columns[3]: "${:,.0f}"
+    st.dataframe(res_df.style.format({
+        res_df.columns[1]:"${:,.0f}",
+        res_df.columns[2]:"${:,.0f}",
+        res_df.columns[3]:"${:,.0f}"
     }), use_container_width=True, hide_index=True, height=400)
+
 
 # ================== 5️⃣ تحليل توزيع الأخطاء (نسخة المهندس جودة المصححة) ==================
 st.markdown("---")
