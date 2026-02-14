@@ -431,23 +431,23 @@ with col_right:
         res_df.columns[2]: "${:,.0f}", 
         res_df.columns[3]: "${:,.0f}"
     }), use_container_width=True, hide_index=True, height=400)
-# ================== 5️⃣ تحليل توزيع الأخطاء ==================
+# ================== 5️⃣ تحليل توزيع الأخطاء (نسخة المهندس جودة المصححة) ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
 
 # تقسيم الصفحة إلى عمودين
 col_err1, col_err2 = st.columns(2)
 
-# ================== 1️⃣ توزيع الأخطاء ==================
-with col_err1:
-    # جلب البواقي أو توليد بيانات وهمية إذا لم تتوافر
-    residuals = metrics.get('residuals', np.random.normal(0, 1, 100))
-    residuals = np.nan_to_num(residuals)  # حماية من NaN
+# جلب البواقي أو توليد بيانات وهمية إذا لم تتوافر (خارج الأعمدة لتوحيد البيانات)
+residuals = metrics.get('residuals', np.random.normal(0, 500, 30))
+residuals = np.nan_to_num(residuals) 
 
+# ================== 1️⃣ توزيع الأخطاء (العمود الأول) ==================
+with col_err1:
     fig_hist = go.Figure(
         data=[go.Histogram(
             x=residuals,
-            nbinsx=30,
+            nbinsx=20,
             marker_color=NEON_COLOR,
             opacity=0.7,
             name=t("توزيع الأخطاء", "Residuals")
@@ -463,9 +463,10 @@ with col_err1:
         yaxis_title=t("التكرار", "Frequency"),
         margin=dict(l=20, r=20, t=40, b=20)
     )
+    # عرض رسمة التوزيع بكي منفرد
+    st.plotly_chart(fig_hist, use_container_width=True, key=f"hist_{st.session_state['theme_state']}")
 
-st.plotly_chart(fig_res_time, use_container_width=True, key=f"err_{st.session_state['theme_state']}")
-# ================== 2️⃣ الأخطاء عبر الزمن ==================
+# ================== 2️⃣ الأخطاء عبر الزمن (العمود الثاني) ==================
 with col_err2:
     fig_res_time = go.Figure()
 
@@ -473,7 +474,7 @@ with col_err2:
         y=residuals,
         mode='lines+markers',
         line=dict(color="#ff4b4b", width=2),
-        marker=dict(size=4),
+        marker=dict(size=6),
         name=t("الأخطاء", "Residuals")
     ))
 
@@ -487,8 +488,8 @@ with col_err2:
         margin=dict(l=20, r=20, t=40, b=20),
         hovermode="x unified"
     )
-st.plotly_chart(fig_res_time, use_container_width=True, key=f"err_{st.session_state['theme_state']}")
-    
+    # عرض رسمة التسلسل الزمني بكي مختلف تماماً
+    st.plotly_chart(fig_res_time, use_container_width=True, key=f"time_{st.session_state['theme_state']}")
     # ================== 6️⃣ Scenario Comparison (Final Production Version - Corrected) ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
