@@ -83,34 +83,49 @@ with st.spinner(t("⏳ جاري تحميل الملفات الأساسية...", 
 if model is None:
     st.stop()
 
-# ================== Sidebar & Theme ==================
-def apply_theme_css():
-    global CHART_TEMPLATE, NEON_COLOR, TEXT_COLOR
-    CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state']=="Dark Mode" else "plotly"
-    NEON_COLOR = "#00f2fe"
-    TEXT_COLOR = "white" if st.session_state['theme_state']=="Dark Mode" else "#1e293b"
-    
-    if st.session_state['theme_state'] == "Dark Mode":
-        st.markdown("""
-            <style>
-            .stApp, .stAppViewContainer, .stMain { background-color: #0e1117 !important; }
-            [data-testid="stSidebar"], [data-testid="stSidebarContent"] { background-color: #161b22 !important; }
-            h1,h2,h3,h4,h5,h6,p,label,span { color: #ffffff !important; }
-            .stMetric { background-color: #1e2130 !important; border: 1px solid #00f2fe !important; border-radius: 10px; }
-            </style>
-        """, unsafe_allow_html=True)
+# ================== Theme Variables ==================
+def get_theme_vars():
+    """ارجع القيم حسب الثيم الحالي"""
+    if st.session_state.get('theme_state', 'Light Mode') == "Dark Mode":
+        return {
+            "CHART_TEMPLATE": "plotly_dark",
+            "NEON_COLOR": "#00f2fe",
+            "TEXT_COLOR": "white",
+            "BG_STYLE": "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+        }
     else:
-        st.markdown("""
-            <style>
-            .stApp, .stAppViewContainer, .stMain { background-color: #ffffff !important; }
-            h1,h2,h3,h4,h5,h6,p,label,span { color: #31333F !important; }
-            .stMetric { background-color: #f0f2f6 !important; border: 1px solid #cccccc !important; border-radius: 10px; }
-            </style>
-        """, unsafe_allow_html=True)
+        return {
+            "CHART_TEMPLATE": "plotly",
+            "NEON_COLOR": "#00f2fe",
+            "TEXT_COLOR": "#1e293b",
+            "BG_STYLE": "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
+        }
+
+theme_vars = get_theme_vars()
+CHART_TEMPLATE = theme_vars["CHART_TEMPLATE"]
+NEON_COLOR = theme_vars["NEON_COLOR"]
+TEXT_COLOR = theme_vars["TEXT_COLOR"]
+BG_STYLE = theme_vars["BG_STYLE"]
+
+def apply_theme_css():
+    colors = get_theme_vars()
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{ background: {colors['BG_STYLE']}; color: {colors['TEXT_COLOR']}; }}
+        h1,h2,h3,h4,h5,h6,p,label,span {{ color: {colors['TEXT_COLOR']} !important; }}
+        .stMetric {{ border-radius: 10px; border: 1px solid {colors['NEON_COLOR']} !important; }}
+        </style>
+        """, unsafe_allow_html=True
+    )
 
 apply_theme_css()
 
-# Sidebar
+# ================== Sidebar ==================
+def change_theme():
+    st.session_state['theme_state'] = st.session_state['main_theme_selector']
+    apply_theme_css()
+
 with st.sidebar:
     st.header("⚙️ Configuration / الإعدادات")
     
@@ -123,17 +138,14 @@ with st.sidebar:
     )
     st.session_state['lang_state'] = selected_lang
 
-    # اختيار الثيم
+    # اختيار الثيم مع on_change بدلاً من experimental_rerun
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"), 
         ["Dark Mode", "Light Mode"], 
         index=0 if st.session_state['theme_state']=="Dark Mode" else 1,
-        key="main_theme_selector"
+        key="main_theme_selector",
+        on_change=change_theme
     )
-    if theme_choice != st.session_state['theme_state']:
-        st.session_state['theme_state'] = theme_choice
-        apply_theme_css()
-        st.experimental_rerun()
 
 st.sidebar.divider()
 
