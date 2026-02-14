@@ -44,7 +44,8 @@ def ask_gemini(prompt_text: str) -> str:
     except Exception as e:
         return f"❌ فشل الاتصال أو استجابة خاطئة: {str(e)}"
 
-# ================== 2️⃣ Page Setup & Theme ==================
+
+# ================== 2️⃣ Page Setup & Professional Theme ==================
 # Session State للغة والثيم
 if 'lang_state' not in st.session_state:
     st.session_state['lang_state'] = 'عربي'
@@ -56,175 +57,87 @@ def t(ar: str, en: str) -> str:
     return ar if st.session_state.get('lang_state', 'عربي') == 'عربي' else en
 
 # إعدادات الصفحة
-MODEL_VERSION = "v5.9 (Stable Fix)"
+MODEL_VERSION = "v5.9 (Pro Edition)"
 st.set_page_config(
     page_title=f"Retail AI {MODEL_VERSION}",
     layout="wide",
     page_icon="📈"
 )
 
-# ================== Load Assets ==================
-@st.cache_resource
-def load_assets():
-    try:
-        curr_dir = os.path.dirname(os.path.abspath(__file__))
-        model = joblib.load(os.path.join(curr_dir, "catboost_sales_model_10features.pkl"))
-        scaler = joblib.load(os.path.join(curr_dir, "scaler_10features.pkl"))
-        feature_names = joblib.load(os.path.join(curr_dir, "feature_names_10features.pkl"))
-        df_raw = pd.read_parquet(os.path.join(curr_dir, "daily_sales_ready_10features.parquet"))
-        return model, scaler, feature_names, df_raw
-    except Exception as e:
-        st.error(f"❌ فشل تحميل الملفات: {e}")
-        return None, None, None, None
-
-with st.spinner(t("⏳ جاري تحميل الملفات الأساسية...", "⏳ Loading core assets...")):
-    model, scaler, feature_names, df_raw = load_assets()
-
-if model is None:
-    st.stop()
-
-# ================== Theme Variables ==================
+# ================== Theme & Background ==================
 def get_theme_vars():
     """ارجع القيم حسب الثيم الحالي"""
     if st.session_state.get('theme_state', 'Light Mode') == "Dark Mode":
         return {
             "CHART_TEMPLATE": "plotly_dark",
             "NEON_COLOR": "#00f2fe",
-            "TEXT_COLOR": "white",
-            "BG_STYLE": "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+            "TEXT_COLOR": "#ffffff",
+            "BG_IMAGE": "/images/bg_retail_ai.jpg",
+            "OVERLAY_COLOR": "rgba(0,0,0,0.65)",
+            "BUTTON_STYLE": "box-shadow: 0 0 15px #00f2fe;"
         }
     else:
         return {
             "CHART_TEMPLATE": "plotly",
             "NEON_COLOR": "#00f2fe",
             "TEXT_COLOR": "#1e293b",
-            "BG_STYLE": "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
+            "BG_IMAGE": "/images/bg_retail_ai.jpg",
+            "OVERLAY_COLOR": "rgba(248,250,252,0.65)",
+            "BUTTON_STYLE": "box-shadow: 0 0 15px #00f2fe;"
         }
 
 theme_vars = get_theme_vars()
 CHART_TEMPLATE = theme_vars["CHART_TEMPLATE"]
 NEON_COLOR = theme_vars["NEON_COLOR"]
 TEXT_COLOR = theme_vars["TEXT_COLOR"]
-BG_STYLE = theme_vars["BG_STYLE"]
+BG_IMAGE = theme_vars["BG_IMAGE"]
+OVERLAY_COLOR = theme_vars["OVERLAY_COLOR"]
+BUTTON_STYLE = theme_vars["BUTTON_STYLE"]
 
 def apply_theme_css():
-    colors = get_theme_vars()
     st.markdown(
         f"""
         <style>
-        .stApp {{ background: {colors['BG_STYLE']}; color: {colors['TEXT_COLOR']}; }}
-        h1,h2,h3,h4,h5,h6,p,label,span {{ color: {colors['TEXT_COLOR']} !important; }}
-        .stMetric {{ border-radius: 10px; border: 1px solid {colors['NEON_COLOR']} !important; }}
+        /* الخلفية مع صورة */
+        .stApp {{
+            background: url('{BG_IMAGE}') no-repeat center center fixed;
+            background-size: cover;
+            position: relative;
+        }}
+        /* Overlay لتوضيح النصوص */
+        .stApp::before {{
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: {OVERLAY_COLOR};
+            z-index: 0;
+        }}
+        .stApp > div {{
+            position: relative; z-index: 1;
+        }}
+        h1,h2,h3,h4,h5,h6,p,label,span {{
+            color: {TEXT_COLOR} !important;
+        }}
+        .stMetric {{
+            border-radius: 12px; 
+            border: 2px solid {NEON_COLOR} !important;
+            padding: 5px;
+            font-weight: bold;
+            transition: all 0.3s ease-in-out;
+        }}
+        /* Neon button effect */
+        button {{
+            {BUTTON_STYLE}
+            transition: all 0.3s ease-in-out;
+        }}
+        button:hover {{
+            transform: scale(1.05);
+        }}
         </style>
         """, unsafe_allow_html=True
     )
 
 apply_theme_css()
-
-# ================== Sidebar ==================
-def change_theme():
-    st.session_state['theme_state'] = st.session_state['main_theme_selector']
-    apply_theme_css()
-
-with st.sidebar:
-    st.header("⚙️ Configuration / الإعدادات")
-    
-    # اختيار اللغة (ثابتة)
-    selected_lang = st.selectbox(
-        "🌐 Choose Language / اختر اللغة", 
-        ["عربي", "English"],
-        index=0 if st.session_state['lang_state']=="عربي" else 1,
-        key="main_lang_selector"
-    )
-    st.session_state['lang_state'] = selected_lang
-
-    # اختيار الثيم مع on_change بدلاً من experimental_rerun
-    theme_choice = st.selectbox(
-        t("🎨 اختيار الثيم", "🎨 Select Theme"), 
-        ["Dark Mode", "Light Mode"], 
-        index=0 if st.session_state['theme_state']=="Dark Mode" else 1,
-        key="main_theme_selector",
-        on_change=change_theme
-    )
-
-st.sidebar.divider()
-
-# ================== رفع الملفات ومعالجة البيانات ==================
-uploaded = st.sidebar.file_uploader(
-    t("رفع ملف مبيعات جديد", "Upload Sales CSV"), 
-    type="csv", 
-    key="sales_uploader"
-)
-
-if uploaded:
-    df_active = pd.read_csv(uploaded)
-else:
-    df_active = df_raw.copy() if 'df_raw' in locals() else pd.DataFrame()
-
-df_active.columns = [c.lower().strip() for c in df_active.columns]
-
-# ================== المعالجة الزمنية واختيار المتجر ==================
-if not df_active.empty:
-    if 'date' in df_active.columns:
-        df_active['date'] = pd.to_datetime(df_active['date'])
-        df_active = df_active.sort_values('date').set_index('date')
-    
-    store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
-    selected_store = st.sidebar.selectbox(
-        t("اختر المتجر", "Select Store"), 
-        store_list, 
-        key="store_selector"
-    )
-    
-    if 'store_id' in df_active.columns:
-        df_s = df_active[df_active['store_id'] == selected_store].copy()
-    else:
-        df_s = df_active.copy()
-
-    horizon = st.sidebar.slider(
-        t("أيام التوقع القادمة", "Forecast Horizon"), 
-        1, 60, 14, 
-        key="horizon_slider"
-    )
-    
-    scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
-    scen_label = st.sidebar.select_slider(
-        t("سيناريو السوق", "Market Scenario"), 
-        options=list(scen_map.keys()), 
-        value=t("واقعي", "Realistic"), 
-        key="scenario_slider"
-    )
-    scen = scen_map[scen_label]
-
-    # --- دالة حساب المقاييس الديناميكية ---
-    def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
-        try:
-            test_data = df_val.tail(15).copy()
-            if len(test_data) < 5: 
-                return {"r2": 0.88, "mape": 0.12, "residuals_std": 500}
-            
-            X_test = scaler_obj.transform(test_data[features])
-            y_true = test_data['sales'].values
-            y_pred = np.expm1(np.clip(model_obj.predict(X_test), 0, 15))
-            
-            ss_res = np.sum((y_true - y_pred) ** 2)
-            ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
-            r2_raw = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.85
-            mape_raw = np.mean(np.abs((y_true - y_pred) / (y_true + 1)))
-            
-            return {
-                "r2": max(0.68, min(r2_raw, 0.94)),
-                "mape": max(0.06, min(mape_raw, 0.22)),
-                "residuals_std": np.std(y_true - y_pred) if np.std(y_true - y_pred) > 0 else 500
-            }
-        except:
-            return {"r2": 0.854, "mape": 0.115, "residuals_std": 1000.0}
-
-    metrics = get_dynamic_metrics(df_s, model, scaler, feature_names)
-
-else:
-    st.error("⚠️ فشل في تحميل البيانات.")
-    st.stop()
 
 # ================== 3️⃣ Forecast Engine & Plotly Charts (Updated Premium Version) ==================
 
