@@ -212,11 +212,11 @@ else:
     st.error("⚠️ فشل في تحميل البيانات. يرجى رفع ملف CSV صحيح يحتوي على عمود 'sales'.")
     st.stop()
 
-# ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة) ==================
+# ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة - تصحيح ENG.GODA) ==================
 
 def generate_forecast(hist, h, scen_val, res_std):
     """
-    دالة توليد التوقعات: تمنع الانفجار الرقمي وتبدأ التواريخ من اليوم 2026.
+    دالة توليد التوقعات: تمنع الانفجار الرقمي وتبدأ التواريخ من سنة 2026.
     """
     np.random.seed(42)
     preds, lows, ups = [], [], []
@@ -224,23 +224,23 @@ def generate_forecast(hist, h, scen_val, res_std):
     # 1. إعداد البيانات المرجعية (آخر مبيعات حقيقية)
     mean_sales = float(hist['sales'].mean())
     
-    # 2. تحديد تاريخ البداية (من اليوم 13 فبراير 2026)
-    # ده السطر اللي بيحل مشكلة 2011
+    # 2. تحديد تاريخ البداية (من اليوم في سنة 2026)
+    # ملاحظة للمهندس جودة: هذا السطر يضمن تحديث التواريخ لعام 2026 تلقائياً
     start_date = pd.Timestamp.now().normalize() 
     
-    # 3. نظام الحماية والسقف المنطقي
+    # 3. نظام الحماية والسقف المنطقي (Preventing Outliers)
     logical_cap = hist['sales'].max() * 5
     if logical_cap == 0: logical_cap = 1000000
     
     actual_std = hist['sales'].std()
     safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 500)
 
-    # مبيعات وهمية للـ Lags عشان الموديل يشتغل صح
+    # مبيعات مرجعية للـ Lags عشان الموديل يشتغل بدقة
     temp_sales_buffer = list(hist['sales'].tail(30).values)
     forecast_dates = []
 
     for i in range(h):
-        # حساب التاريخ الجديد (بكرة، بعده، وهكذا في 2026)
+        # حساب التاريخ الجديد (2026 وما بعدها)
         nxt = start_date + pd.Timedelta(days=i+1)
         forecast_dates.append(nxt)
         
@@ -258,7 +258,7 @@ def generate_forecast(hist, h, scen_val, res_std):
             'was_closed_yesterday': 1 if temp_sales_buffer[-1]<=0 else 0
         }
         
-        # تحويل وتجهيز البيانات
+        # تحويل وتجهيز البيانات للموديل
         X = pd.DataFrame([feats])[feature_names]
         X_scaled = scaler.transform(X)
         
@@ -266,25 +266,26 @@ def generate_forecast(hist, h, scen_val, res_std):
         p_log = model.predict(X_scaled)[0]
         p_log_safe = np.clip(p_log, 0, 12) 
         
-        # التحويل والسيناريو والسقف
+        # تطبيق السيناريو وسقف الحماية
         p = np.expm1(p_log_safe) * scen_val
         p = min(p, logical_cap)
         
-        # حساب النطاق (Min/Max)
+        # حساب نطاق الثقة (Min/Max)
         boost = 1.96 * safe_std * np.sqrt(i + 1)
         
         preds.append(float(p))
         lows.append(float(max(0, p - boost)))
         ups.append(float(min(p + boost, logical_cap * 1.2)))
         
-        # تحديث البافر لليوم التالي
+        # تحديث البافر لليوم التالي (Feedback Loop)
         temp_sales_buffer.append(p)
         
     # إرجاع النتائج مع أندكس التواريخ الجديد 2026
     return preds, lows, ups, pd.DatetimeIndex(forecast_dates)
 
-# تنفيذ التوقع بناءً على المعطيات
-p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
+# --- التنفيذ الفعلي (هنا تم حل مشكلة KeyError بنجاح) ---
+# تم استخدام 'scen' مباشرة لأنها تحتوي على القيمة الرقمية المطلوبة
+p, l, u, d = generate_forecast(df_s, horizon, scen, metrics['residuals_std'])
 # ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية - تعديل ENG.GODA) ==================
 
 # 1. استخدام المتغيرات المعرفة مسبقاً في الجزء الثاني (لحماية التطبيق من الـ Duplicate ID)
