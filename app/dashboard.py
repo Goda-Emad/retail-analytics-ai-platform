@@ -256,7 +256,7 @@ else:
     st.error("⚠️ فشل في تحميل البيانات.")
     st.stop()
 
-# ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features ==================
+# ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features (محدث) ==================
 
 # --- 0️⃣ تحديث ثيم الرسم والألوان حسب الوضع ---
 CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
@@ -371,22 +371,20 @@ fig.update_layout(
     hovermode="x unified",
 )
 
-# --- 5️⃣ عرض الرسم مع Key ديناميكي حسب الثيم ---
 st.plotly_chart(fig, use_container_width=True, key=f"forecast_chart_{st.session_state['theme_state']}")
+# ================== 4️⃣ العرض البصري والنتائج (محدث لتجنب تكرار yaxis) ==================
 
-# ================== 4️⃣ العرض البصري والنتائج (نسخة متوافقة مع Dark/Light) ==================
-
-# --- 1️⃣ إعدادات أساسية ---
+# إعدادات الثيم والألوان
 NEON_COLOR = "#00f2fe"
 CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(0,242,254,0.15)'
 BAR_COLOR = "#00f2fe" if st.session_state['theme_state']=="Dark Mode" else "#0077ff"
 TEXT_COLOR = "#ffffff" if st.session_state['theme_state']=="Dark Mode" else "#31333F"
 BG_COLOR = "#0e1117" if st.session_state['theme_state']=="Dark Mode" else "#ffffff"
 
-# --- 2️⃣ العنوان الرئيسي ---
+# العنوان الرئيسي
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
-# --- 3️⃣ الإحصائيات العليا (KPIs) ---
+# الإحصائيات العليا (KPIs)
 p = np.nan_to_num(p)
 total_sales = float(np.sum(p))
 r2_safe = metrics.get("r2", 0.85)
@@ -403,7 +401,7 @@ for m, label, val in zip([m1,m2,m3,m4],
 
 st.divider()
 
-# --- 4️⃣ رسم المنحنى التفاعلي ---
+# رسم المنحنى التفاعلي
 st.subheader(t("📈 منحنى التوقعات المستقبلية (2026)", "📈 Future Forecast Curve (2026)"))
 
 fig_trend = go.Figure()
@@ -444,16 +442,16 @@ fig_trend.update_layout(
     margin=dict(l=20, r=20, t=30, b=20),
     title=dict(text=t("📈 توقع المبيعات القادمة", "📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
     xaxis=dict(title=t("التاريخ", "Date"), color=TEXT_COLOR),
-    yaxis=dict(title=t("المبيعات", "Sales"), color=TEXT_COLOR),
+    yaxis=dict(color=TEXT_COLOR, categoryorder='total ascending', title=t("المبيعات", "Sales")),
     legend=dict(font=dict(color=TEXT_COLOR))
 )
 
 st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_main_{st.session_state['theme_state']}")
 
-# --- 5️⃣ العوامل المؤثرة والجدول التفصيلي ---
+# العوامل المؤثرة والجدول التفصيلي
 col_left, col_right = st.columns([1, 1.2])
 
-# === العوامل المؤثرة ===
+# العوامل المؤثرة
 with col_left:
     st.subheader(t("🎯 العوامل المؤثرة", "🎯 Key Drivers"))
     feat_ar = {
@@ -481,15 +479,14 @@ with col_left:
         template=CHART_TEMPLATE,
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        yaxis={'categoryorder':'total ascending'},
         margin=dict(l=10, r=10, t=10, b=10),
         title=dict(text=t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers Importance"), font=dict(color=TEXT_COLOR)),
         xaxis=dict(color=TEXT_COLOR),
-        yaxis=dict(color=TEXT_COLOR)
+        yaxis=dict(color=TEXT_COLOR, categoryorder='total ascending')
     )
     st.plotly_chart(fig_imp, use_container_width=True, key=f"imp_{st.session_state['theme_state']}")
 
-# === الجدول التفصيلي ===
+# الجدول التفصيلي
 with col_right:
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast"))
     res_df = pd.DataFrame({
