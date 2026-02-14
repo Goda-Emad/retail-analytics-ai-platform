@@ -1,24 +1,21 @@
+# ================== Imports ==================
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import joblib, os, time
-import requests
+import joblib, os, time, requests
 
-# ================== 1️⃣ إعداد Gemini عبر REST API (نسخة محسّنة ENG.GODA) ==================
-
+# ================== 1️⃣ Gemini API (محسّن ENG.GODA) ==================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 def get_available_gemini_model():
-    """
-    تختار أول موديل متاح يدعم generateContent لتجنب 404
-    """
     if not GEMINI_API_KEY:
         return None
     headers = {"Authorization": f"Bearer {GEMINI_API_KEY}"}
     url = "https://generativelanguage.googleapis.com/v1beta/models"
     try:
         resp = requests.get(url, headers=headers, timeout=10)
+        resp.raise_for_status()
         models = resp.json().get("models", [])
         for m in models:
             if "generateContent" in m.get("supportedGenerationMethods", []):
@@ -27,39 +24,33 @@ def get_available_gemini_model():
         st.warning(f"⚠️ خطأ أثناء جلب الموديلات: {e}")
     return None
 
-def ask_gemini(prompt_text):
-    """
-    استدعاء Gemini مع حماية 404 واختيار الموديل الصحيح تلقائيًا
-    """
+def ask_gemini(prompt_text: str) -> str:
     if not GEMINI_API_KEY:
         return "❌ GEMINI_API_KEY غير موجود في الإعدادات (Secrets)."
     
     model_name = get_available_gemini_model()
     if not model_name:
         return "❌ لم يتم العثور على أي موديل Gemini صالح يدعم generateContent."
-
+    
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
-
+    
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=20)
-        if response.status_code == 200:
-            data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-        else:
-            return f"❌ خطأ من جوجل ({response.status_code}): {response.text}"
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
-        return f"❌ فشل الاتصال: {str(e)}"
+        return f"❌ فشل الاتصال أو استجابة خاطئة: {str(e)}"
 
-# ================== 2️⃣ إعدادات الصفحة وحل مشكلة الـ NameError ==================
-
-# تهيئة اللغة في الـ Session State قبل أي شيء
+# ================== 2️⃣ Page Setup & Theme ==================
+# Session State للغة
 if 'lang' not in st.session_state:
     st.session_state['lang'] = 'عربي'
 
-# دالة الترجمة
-def t(ar, en):
+def t(ar: str, en: str) -> str:
+    """ترجمة ديناميكية حسب اختيار اللغة"""
     return ar if st.session_state.get('lang', 'عربي') == 'عربي' else en
 
 # إعدادات الصفحة
@@ -70,26 +61,35 @@ st.set_page_config(
     page_icon="📈"
 )
 
-# --- حل الـ NameError: تعريف الثيم فوراً في السايدبار ---
+# Sidebar: Language & Theme
 with st.sidebar:
     st.header("⚙️ Configuration")
     
-    # اختيار اللغة
-    lang_choice = st.radio("Language / اللغة", ["عربي", "English"], index=0 if st.session_state['lang'] == 'عربي' else 1)
+    # Language
+    lang_choice = st.radio("Language / اللغة", ["عربي", "English"],
+                           index=0 if st.session_state['lang'] == 'عربي' else 1)
     st.session_state['lang'] = lang_choice
 
-    # اختيار الثيم
+    # Theme
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"),
         options=["Dark Mode", "Light Mode"],
         index=1
     )
 
-# تعريف متغيرات الثيم
+# Theme Variables
 CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
+TEXT_COLOR = "white" if theme_choice=="Dark Mode" else "#1e293b"
+BG_STYLE = "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" if theme_choice=="Dark Mode" else "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
 
-# تحميل الملفات الأساسية
+# Apply background style
+st.markdown(
+    f"<style>.stApp {{ background: {BG_STYLE}; color: {TEXT_COLOR}; }}</style>",
+    unsafe_allow_html=True
+)
+
+# ================== Load Assets ==================
 @st.cache_resource
 def load_assets():
     try:
@@ -103,14 +103,16 @@ def load_assets():
         st.error(f"❌ فشل تحميل الملفات: {e}")
         return None, None, None, None
 
-model, scaler, feature_names, df_raw = load_assets()
+with st.spinner(t("⏳ جاري تحميل الملفات الأساسية...", "⏳ Loading core assets...")):
+    model, scaler, feature_names, df_raw = load_assets()
 
 if model is None:
     st.stop()
 
-# ================== 2️⃣ السايدبار الموحد، المترجم، والمعالجة الذكية ==================
 
-# 1. تهيئة حالة اللغة والثيم لضمان التفاعل اللحظي
+# ================== 2️⃣ Sidebar, Translation & Smart Processing ==================
+
+# 1. تهيئة حالة اللغة والثيم
 if 'lang_state' not in st.session_state:
     st.session_state['lang_state'] = "عربي"
 if 'theme_state' not in st.session_state:
@@ -128,63 +130,50 @@ with st.sidebar:
     )
     st.session_state['lang_state'] = selected_lang
 
-    # 3. دالة الترجمة الشاملة (t)
+    # 3. دالة الترجمة
     def t(ar, en):
         return ar if st.session_state['lang_state'] == "عربي" else en
 
-    # 4. اختيار الثيم (المعدل ليعمل لحظياً)
+    # 4. اختيار الثيم
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"), 
         ["Dark Mode", "Light Mode"], 
         index=0 if st.session_state['theme_state'] == "Dark Mode" else 1,
         key="main_theme_selector"
     )
-    # تحديث الـ Session State فوراً عند التغيير
     if theme_choice != st.session_state['theme_state']:
         st.session_state['theme_state'] = theme_choice
-        st.rerun() 
+        st.rerun()  # تحديث الصفحة فوراً عند تغيير الثيم
 
-# 5. تعريف متغيرات الثيم العالمية وحقن الـ CSS لتغيير الخلفية (الحل الجذري)
+# 5. متغيرات الثيم وحقن CSS
 CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
 
 if st.session_state['theme_state'] == "Dark Mode":
     st.markdown("""
         <style>
-        /* إجبار الخلفية والنصوص في الوضع الليلي */
-        .stApp, .stAppViewContainer, .stMain {
-            background-color: #0e1117 !important;
-        }
-        [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
-            background-color: #161b22 !important;
-        }
-        h1, h2, h3, h4, h5, h6, p, label, span {
-            color: #ffffff !important;
-        }
-        .stMetric {
-            background-color: #1e2130 !important;
-            border: 1px solid #00f2fe !important;
-            border-radius: 10px;
-        }
+        .stApp, .stAppViewContainer, .stMain { background-color: #0e1117 !important; }
+        [data-testid="stSidebar"], [data-testid="stSidebarContent"] { background-color: #161b22 !important; }
+        h1,h2,h3,h4,h5,h6,p,label,span { color: #ffffff !important; }
+        .stMetric { background-color: #1e2130 !important; border: 1px solid #00f2fe !important; border-radius: 10px; }
         </style>
     """, unsafe_allow_html=True)
 else:
     st.markdown("""
         <style>
-        /* إجبار الخلفية والنصوص في الوضع النهاري */
-        .stApp, .stAppViewContainer, .stMain {
-            background-color: #ffffff !important;
-        }
-        h1, h2, h3, h4, h5, h6, p, label, span {
-            color: #31333F !important;
-        }
+        .stApp, .stAppViewContainer, .stMain { background-color: #ffffff !important; }
+        h1,h2,h3,h4,h5,h6,p,label,span { color: #31333F !important; }
         </style>
     """, unsafe_allow_html=True)
 
 st.sidebar.divider()
 
 # 6. رفع الملفات ومعالجة البيانات
-uploaded = st.sidebar.file_uploader(t("رفع ملف مبيعات جديد", "Upload Sales CSV"), type="csv", key="sales_uploader")
+uploaded = st.sidebar.file_uploader(
+    t("رفع ملف مبيعات جديد", "Upload Sales CSV"), 
+    type="csv", 
+    key="sales_uploader"
+)
 
 if uploaded:
     df_active = pd.read_csv(uploaded)
@@ -200,17 +189,30 @@ if not df_active.empty:
         df_active = df_active.sort_values('date').set_index('date')
     
     store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
-    selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list, key="store_selector")
+    selected_store = st.sidebar.selectbox(
+        t("اختر المتجر", "Select Store"), 
+        store_list, 
+        key="store_selector"
+    )
     
     if 'store_id' in df_active.columns:
         df_s = df_active[df_active['store_id'] == selected_store].copy()
     else:
         df_s = df_active.copy()
 
-    horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14, key="horizon_slider")
+    horizon = st.sidebar.slider(
+        t("أيام التوقع القادمة", "Forecast Horizon"), 
+        1, 60, 14, 
+        key="horizon_slider"
+    )
     
     scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
-    scen_label = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"), key="scenario_slider")
+    scen_label = st.sidebar.select_slider(
+        t("سيناريو السوق", "Market Scenario"), 
+        options=list(scen_map.keys()), 
+        value=t("واقعي", "Realistic"), 
+        key="scenario_slider"
+    )
     scen = scen_map[scen_label]
 
     # --- 8. دالة حساب المقاييس ---
@@ -242,39 +244,40 @@ if not df_active.empty:
 else:
     st.error("⚠️ فشل في تحميل البيانات.")
     st.stop()
-# ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة - تصحيح ENG.GODA) ==================
+
+# ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features ==================
+
+# دالة ترجمة الـ Features مباشرة
+feature_labels = {
+    'dayofweek_sin': t("اليوم في الأسبوع (سين)", "Day of Week (Sin)"),
+    'dayofweek_cos': t("اليوم في الأسبوع (كوس)", "Day of Week (Cos)"),
+    'month_sin': t("الشهر (سين)", "Month (Sin)"),
+    'month_cos': t("الشهر (كوس)", "Month (Cos)"),
+    'lag_1': t("تأخير يوم واحد", "Lag 1 Day"),
+    'lag_7': t("تأخير أسبوع", "Lag 7 Days"),
+    'rolling_mean_7': t("متوسط 7 أيام", "Rolling Mean 7"),
+    'rolling_mean_14': t("متوسط 14 يوم", "Rolling Mean 14"),
+    'is_weekend': t("عطلة نهاية الأسبوع", "Is Weekend"),
+    'was_closed_yesterday': t("مغلق أمس", "Was Closed Yesterday")
+}
 
 def generate_forecast(hist, h, scen_val, res_std):
-    """
-    دالة توليد التوقعات: تمنع الانفجار الرقمي وتبدأ التواريخ من سنة 2026.
-    """
     np.random.seed(42)
     preds, lows, ups = [], [], []
     
-    # 1. إعداد البيانات المرجعية (آخر مبيعات حقيقية)
     mean_sales = float(hist['sales'].mean())
-    
-    # 2. تحديد تاريخ البداية (من اليوم في سنة 2026)
-    # ملاحظة للمهندس جودة: هذا السطر يضمن تحديث التواريخ لعام 2026 تلقائياً
-    start_date = pd.Timestamp.now().normalize() 
-    
-    # 3. نظام الحماية والسقف المنطقي (Preventing Outliers)
-    logical_cap = hist['sales'].max() * 5
-    if logical_cap == 0: logical_cap = 1000000
-    
+    start_date = pd.Timestamp.now().normalize()
+    logical_cap = hist['sales'].max() * 5 if hist['sales'].max() > 0 else 1000000
     actual_std = hist['sales'].std()
     safe_std = res_std if 0 < res_std < (actual_std * 3) else (actual_std if actual_std > 0 else 500)
-
-    # مبيعات مرجعية للـ Lags عشان الموديل يشتغل بدقة
+    
     temp_sales_buffer = list(hist['sales'].tail(30).values)
     forecast_dates = []
 
     for i in range(h):
-        # حساب التاريخ الجديد (2026 وما بعدها)
         nxt = start_date + pd.Timedelta(days=i+1)
         forecast_dates.append(nxt)
         
-        # بناء المميزات بناءً على التاريخ الجديد 2026
         feats = {
             'dayofweek_sin': np.sin(2*np.pi*nxt.dayofweek/7), 
             'dayofweek_cos': np.cos(2*np.pi*nxt.dayofweek/7),
@@ -288,34 +291,72 @@ def generate_forecast(hist, h, scen_val, res_std):
             'was_closed_yesterday': 1 if temp_sales_buffer[-1]<=0 else 0
         }
         
-        # تحويل وتجهيز البيانات للموديل
         X = pd.DataFrame([feats])[feature_names]
         X_scaled = scaler.transform(X)
         
-        # التوقع اللوغاريتمي الآمن
         p_log = model.predict(X_scaled)[0]
-        p_log_safe = np.clip(p_log, 0, 12) 
-        
-        # تطبيق السيناريو وسقف الحماية
+        p_log_safe = np.clip(p_log, 0, 12)
         p = np.expm1(p_log_safe) * scen_val
         p = min(p, logical_cap)
-        
-        # حساب نطاق الثقة (Min/Max)
         boost = 1.96 * safe_std * np.sqrt(i + 1)
         
         preds.append(float(p))
         lows.append(float(max(0, p - boost)))
         ups.append(float(min(p + boost, logical_cap * 1.2)))
         
-        # تحديث البافر لليوم التالي (Feedback Loop)
         temp_sales_buffer.append(p)
         
-    # إرجاع النتائج مع أندكس التواريخ الجديد 2026
     return preds, lows, ups, pd.DatetimeIndex(forecast_dates)
 
-# --- التنفيذ الفعلي (هنا تم حل مشكلة KeyError بنجاح) ---
-# تم استخدام 'scen' مباشرة لأنها تحتوي على القيمة الرقمية المطلوبة
+# --- تنفيذ التوقع ---
 p, l, u, d = generate_forecast(df_s, horizon, scen, metrics['residuals_std'])
+
+# ================== Plotly Chart مع Hover مترجم ==================
+fig = go.Figure()
+
+# Actual
+fig.add_trace(go.Scatter(
+    x=df_s.index[-60:], y=df_s['sales'].tail(60),
+    mode='lines+markers',
+    name=t("المبيعات الفعلية", "Actual Sales"),
+    line=dict(color="#00f2fe"),
+    marker=dict(size=6),
+    hovertemplate='%{x|%Y-%m-%d} <br>Sales: %{y:.0f}<extra></extra>'
+))
+
+# Forecast
+fig.add_trace(go.Scatter(
+    x=d, y=p,
+    mode='lines+markers',
+    name=t("توقع المبيعات", "Forecast Sales"),
+    line=dict(color="#ff7f0e"),
+    marker=dict(size=6),
+    hovertemplate='%{x|%Y-%m-%d} <br>Forecast: %{y:.0f}<extra></extra>'
+))
+
+# Confidence Interval
+fig.add_trace(go.Scatter(
+    x=list(d)+list(d[::-1]),
+    y=list(l)+list(u[::-1]),
+    fill='toself',
+    fillcolor='rgba(255,127,14,0.2)',
+    line=dict(color='rgba(255,255,255,0)'),
+    hoverinfo="skip",
+    showlegend=True,
+    name=t("نطاق الثقة", "Confidence Interval")
+))
+
+fig.update_layout(
+    template=CHART_TEMPLATE,
+    title=t("📈 توقع المبيعات القادمة", "📈 Upcoming Sales Forecast"),
+    xaxis_title=t("التاريخ", "Date"),
+    yaxis_title=t("المبيعات", "Sales"),
+    hovermode="x unified",
+)
+
+# --- عرض الرسم مع Key فريد لتجنب DuplicateElementId ---
+st.plotly_chart(fig, use_container_width=True, key="forecast_chart_2026_dark")
+
 # ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية - تعديل ENG.GODA) ==================
 
 # 1. استخدام المتغيرات المعرفة مسبقاً في الجزء الثاني
