@@ -142,11 +142,44 @@ with st.sidebar:
     # تحديث الـ Session State فوراً عند التغيير
     if theme_choice != st.session_state['theme_state']:
         st.session_state['theme_state'] = theme_choice
-        st.rerun() # إعادة التشغيل لتطبيق الثيم على كل الرسوم البيانية
+        st.rerun() 
 
-# 5. تعريف متغيرات الثيم العالمية (تستخدم Session State لضمان الثبات)
+# 5. تعريف متغيرات الثيم العالمية وحقن الـ CSS لتغيير الخلفية (الحل الجذري)
 CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
+
+if st.session_state['theme_state'] == "Dark Mode":
+    st.markdown("""
+        <style>
+        /* إجبار الخلفية والنصوص في الوضع الليلي */
+        .stApp, .stAppViewContainer, .stMain {
+            background-color: #0e1117 !important;
+        }
+        [data-testid="stSidebar"], [data-testid="stSidebarContent"] {
+            background-color: #161b22 !important;
+        }
+        h1, h2, h3, h4, h5, h6, p, label, span {
+            color: #ffffff !important;
+        }
+        .stMetric {
+            background-color: #1e2130 !important;
+            border: 1px solid #00f2fe !important;
+            border-radius: 10px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+        <style>
+        /* إجبار الخلفية والنصوص في الوضع النهاري */
+        .stApp, .stAppViewContainer, .stMain {
+            background-color: #ffffff !important;
+        }
+        h1, h2, h3, h4, h5, h6, p, label, span {
+            color: #31333F !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 st.sidebar.divider()
 
@@ -176,7 +209,6 @@ if not df_active.empty:
 
     horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14, key="horizon_slider")
     
-    # القاموس الديناميكي للسيناريوهات (حل مشكلة KeyError)
     scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
     scen_label = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"), key="scenario_slider")
     scen = scen_map[scen_label]
@@ -210,7 +242,6 @@ if not df_active.empty:
 else:
     st.error("⚠️ فشل في تحميل البيانات.")
     st.stop()
-
 # ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة - تصحيح ENG.GODA) ==================
 
 def generate_forecast(hist, h, scen_val, res_std):
