@@ -318,10 +318,9 @@ def generate_forecast(hist, h, scen_val, res_std):
 p, l, u, d = generate_forecast(df_s, horizon, scen, metrics['residuals_std'])
 # ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية - تعديل ENG.GODA) ==================
 
-# 1. استخدام المتغيرات المعرفة مسبقاً في الجزء الثاني (لحماية التطبيق من الـ Duplicate ID)
-# لا نحتاج لتعريف theme_choice هنا لأنه موجود بالفعل في السايدبار فوق
+# 1. استخدام المتغيرات المعرفة مسبقاً في الجزء الثاني
 NEON_COLOR = "#00f2fe"
-CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
+# نعتمد على CHART_TEMPLATE المعرف في الجزء الثاني لضمان التزامن
 
 # 2. العنوان الرئيسي للداشبورد
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
@@ -343,21 +342,22 @@ st.divider()
 # --- 2️⃣ الرسم البياني التفاعلي (Plotly) ---
 st.subheader(t("📈 منحنى التوقعات المستقبلية (2026)", "📈 Future Forecast Curve (2026)"))
 
-fig = go.Figure()
+# تم توحيد الاسم إلى fig_trend لمنع NameError
+fig_trend = go.Figure()
 
 # إضافة نطاق الثقة
-fig.add_trace(go.Scatter(
+fig_trend.add_trace(go.Scatter(
     x=np.concatenate([d, d[::-1]]),
     y=np.concatenate([u, l[::-1]]),
     fill='toself',
-    fillcolor='rgba(0,242,254,0.15)' if theme_choice=="Light Mode" else 'rgba(0,242,254,0.3)',
+    fillcolor='rgba(0,242,254,0.15)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,242,254,0.3)',
     line=dict(color='rgba(0,0,0,0)'),
     hoverinfo="skip",
     showlegend=False
 ))
 
 # إضافة المبيعات التاريخية (آخر 60 يوم)
-fig.add_trace(go.Scatter(
+fig_trend.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
     name=t("مبيعات سابقة", "Actual Sales"),
@@ -365,14 +365,14 @@ fig.add_trace(go.Scatter(
 ))
 
 # إضافة خط التوقع الذكي
-fig.add_trace(go.Scatter(
+fig_trend.add_trace(go.Scatter(
     x=d,
     y=p,
     name=t("توقع الذكاء الاصطناعي", "AI Forecast"),
     line=dict(color=NEON_COLOR, width=4)
 ))
 
-fig.update_layout(
+fig_trend.update_layout(
     template=CHART_TEMPLATE,
     hovermode="x unified",
     margin=dict(l=20, r=20, t=30, b=20),
@@ -381,7 +381,8 @@ fig.update_layout(
     height=450
 )
 
-st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_{st.session_state['theme_state']}")
+# عرض الرسمة باستخدام Key ديناميكي لضمان استجابة الـ Dark Mode
+st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_main_{st.session_state['theme_state']}")
 
 # --- 3️⃣ تقسيم العرض (العوامل المؤثرة والجدول التفصيلي) ---
 col_left, col_right = st.columns([1, 1.2])
@@ -401,7 +402,6 @@ with col_left:
     except:
         importances = np.zeros(len(feature_names))
 
-    # استخدام متغير lang اللي عرفناه في الجزء التاني
     names = [feat_ar.get(n, n) for n in feature_names] if st.session_state['lang_state']=="عربي" else feature_names
     
     fig_imp = go.Figure(go.Bar(
@@ -414,7 +414,7 @@ with col_left:
         margin=dict(l=10, r=10, t=10, b=10),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
-    st.plotly_chart(fig_imp, use_container_width=True)
+    st.plotly_chart(fig_imp, use_container_width=True, key=f"imp_{st.session_state['theme_state']}")
 
 with col_right:
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast"))
@@ -425,16 +425,12 @@ with col_right:
         t("الأقصى", "Max"): u
     })
 
-    styled_df = (
-        res_df.style
-        .format({
-            res_df.columns[1]: "${:,.0f}", 
-            res_df.columns[2]: "${:,.0f}", 
-            res_df.columns[3]: "${:,.0f}"
-        })
-        .background_gradient(cmap="Blues", subset=[res_df.columns[1]])
-    )
-    st.dataframe(styled_df, use_container_width=True, hide_index=True, height=400)
+    # ستايل الجدول (يتكيف مع الثيم)
+    st.dataframe(res_df.style.format({
+        res_df.columns[1]: "${:,.0f}", 
+        res_df.columns[2]: "${:,.0f}", 
+        res_df.columns[3]: "${:,.0f}"
+    }), use_container_width=True, hide_index=True, height=400)
 # ================== 5️⃣ تحليل توزيع الأخطاء ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
