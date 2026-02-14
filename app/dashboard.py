@@ -45,13 +45,15 @@ def ask_gemini(prompt_text: str) -> str:
         return f"❌ فشل الاتصال أو استجابة خاطئة: {str(e)}"
 
 # ================== 2️⃣ Page Setup & Theme ==================
-# Session State للغة
-if 'lang' not in st.session_state:
-    st.session_state['lang'] = 'عربي'
+# Session State للغة والثيم
+if 'lang_state' not in st.session_state:
+    st.session_state['lang_state'] = 'عربي'
+if 'theme_state' not in st.session_state:
+    st.session_state['theme_state'] = 'Light Mode'
 
 def t(ar: str, en: str) -> str:
     """ترجمة ديناميكية حسب اختيار اللغة"""
-    return ar if st.session_state.get('lang', 'عربي') == 'عربي' else en
+    return ar if st.session_state.get('lang_state', 'عربي') == 'عربي' else en
 
 # إعدادات الصفحة
 MODEL_VERSION = "v5.9 (Stable Fix)"
@@ -59,34 +61,6 @@ st.set_page_config(
     page_title=f"Retail AI {MODEL_VERSION}",
     layout="wide",
     page_icon="📈"
-)
-
-# Sidebar: Language & Theme
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    # Language
-    lang_choice = st.radio("Language / اللغة", ["عربي", "English"],
-                           index=0 if st.session_state['lang'] == 'عربي' else 1)
-    st.session_state['lang'] = lang_choice
-
-    # Theme
-    theme_choice = st.selectbox(
-        t("🎨 اختيار الثيم", "🎨 Select Theme"),
-        options=["Dark Mode", "Light Mode"],
-        index=1
-    )
-
-# Theme Variables
-CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
-NEON_COLOR = "#00f2fe"
-TEXT_COLOR = "white" if theme_choice=="Dark Mode" else "#1e293b"
-BG_STYLE = "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" if theme_choice=="Dark Mode" else "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
-
-# Apply background style
-st.markdown(
-    f"<style>.stApp {{ background: {BG_STYLE}; color: {TEXT_COLOR}; }}</style>",
-    unsafe_allow_html=True
 )
 
 # ================== Load Assets ==================
@@ -109,21 +83,7 @@ with st.spinner(t("⏳ جاري تحميل الملفات الأساسية...", 
 if model is None:
     st.stop()
 
-
-
-# ================== 2️⃣ Sidebar, Translation & Smart Processing (Final 2026 Version) ==================
-
-# 1️⃣ تهيئة حالة اللغة والثيم
-if 'lang_state' not in st.session_state:
-    st.session_state['lang_state'] = "عربي"
-if 'theme_state' not in st.session_state:
-    st.session_state['theme_state'] = "Light Mode"
-
-# 2️⃣ دالة الترجمة الشاملة
-def t(ar, en):
-    return ar if st.session_state['lang_state'] == "عربي" else en
-
-# 3️⃣ دالة تطبيق CSS حسب الثيم
+# ================== 2️⃣ Sidebar & Theme ==================
 def apply_theme_css():
     global CHART_TEMPLATE, NEON_COLOR
     CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state']=="Dark Mode" else "plotly"
@@ -147,23 +107,21 @@ def apply_theme_css():
             </style>
         """, unsafe_allow_html=True)
 
-# 4️⃣ تطبيق CSS عند التحميل
+# تطبيق CSS عند التحميل
 apply_theme_css()
 
-# ================== Sidebar ==================
+# Sidebar
 with st.sidebar:
     st.header("⚙️ Configuration / الإعدادات")
     
-    # اختيار اللغة
+    # اختيار اللغة (ثابتة بدون تضارب)
     selected_lang = st.selectbox(
         "🌐 Choose Language / اختر اللغة", 
         ["عربي", "English"],
         index=0 if st.session_state['lang_state']=="عربي" else 1,
         key="main_lang_selector"
     )
-    if selected_lang != st.session_state['lang_state']:
-        st.session_state['lang_state'] = selected_lang
-        st.experimental_rerun()  # إعادة تحميل الصفحة فورًا عند تغيير اللغة
+    st.session_state['lang_state'] = selected_lang  # تحديث اللغة مباشرة
 
     # اختيار الثيم
     theme_choice = st.selectbox(
@@ -174,8 +132,8 @@ with st.sidebar:
     )
     if theme_choice != st.session_state['theme_state']:
         st.session_state['theme_state'] = theme_choice
-        apply_theme_css()         # ← إعادة تطبيق CSS فورًا
-        st.experimental_rerun()   # ← إعادة تحميل الصفحة لتفعيل الثيم الجديد
+        apply_theme_css()
+        st.experimental_rerun()   # إعادة تحميل الصفحة لتفعيل الثيم الجديد
 
 st.sidebar.divider()
 
