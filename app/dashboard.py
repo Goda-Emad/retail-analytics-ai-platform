@@ -107,6 +107,69 @@ if not df_active.empty:
 else:
     st.error("Data Missing!")
     st.stop()
+# ================== 3️⃣ Sidebar (قائمة واحدة فقط) ==================
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    
+    # اختيار اللغة (Selectbox فقط)
+    selected_lang = st.selectbox(
+        "🌐 Language / اللغة", ["عربي", "English"],
+        index=0 if st.session_state['lang_state'] == "عربي" else 1,
+        key="unique_lang_selector"
+    )
+    if selected_lang != st.session_state['lang_state']:
+        st.session_state['lang_state'] = selected_lang
+        st.rerun()
+
+    # اختيار الثيم
+    selected_theme = st.selectbox(
+        t("🎨 الثيم", "🎨 Theme"), ["Dark Mode", "Light Mode"],
+        index=0 if st.session_state['theme_state'] == "Dark Mode" else 1,
+        key="unique_theme_selector"
+    )
+    if selected_theme != st.session_state['theme_state']:
+        st.session_state['theme_state'] = selected_theme
+        st.rerun()
+
+    st.divider()
+
+# ================== 4️⃣ Assets & Data Processing ==================
+@st.cache_resource
+def load_assets():
+    try:
+        curr_dir = os.path.dirname(os.path.abspath(__file__))
+        model = joblib.load(os.path.join(curr_dir, "catboost_sales_model_10features.pkl"))
+        scaler = joblib.load(os.path.join(curr_dir, "scaler_10features.pkl"))
+        f_names = joblib.load(os.path.join(curr_dir, "feature_names_10features.pkl"))
+        df_r = pd.read_parquet(os.path.join(curr_dir, "daily_sales_ready_10features.parquet"))
+        return model, scaler, f_names, df_r
+    except: return None, None, None, None
+
+model, scaler, feature_names, df_raw = load_assets()
+
+# معالجة الملفات والبيانات
+uploaded = st.sidebar.file_uploader(t("رفع ملف", "Upload CSV"), type="csv")
+df_active = pd.read_csv(uploaded) if uploaded else (df_raw.copy() if df_raw is not None else pd.DataFrame())
+
+if not df_active.empty:
+    df_active.columns = [c.lower().strip() for c in df_active.columns]
+    if 'date' in df_active.columns:
+        df_active['date'] = pd.to_datetime(df_active['date'])
+        df_active = df_active.sort_values('date').set_index('date')
+    
+    # اختيار المتجر والسيناريو
+    store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
+    selected_store = st.sidebar.selectbox(t("المتجر", "Store"), store_list)
+    df_s = df_active[df_active['store_id'] == selected_store].copy() if 'store_id' in df_active.columns else df_active.copy()
+    
+    horizon = st.sidebar.slider(t("أيام التوقع", "Horizon"), 1, 60, 14)
+    scen = st.sidebar.select_slider(t("السيناريو", "Scenario"), options=[0.85, 1.0, 1.15], value=1.0)
+
+    # تعريف متغير metrics محلياً لضمان عدم حدوث NameError
+    metrics = st.session_state['metrics'] 
+else:
+    st.error("Data Missing!")
+    st.stop()
 
 # ================== 3️⃣ Forecast Engine & Plotly Charts (Updated Premium Version) ==================
 
