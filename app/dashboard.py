@@ -258,7 +258,12 @@ else:
 
 # ================== 3️⃣ Forecast Engine & Plotly Charts مع ترجمة Features ==================
 
-# دالة ترجمة الـ Features مباشرة
+# --- 0️⃣ تحديث ثيم الرسم والألوان حسب الوضع ---
+CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
+NEON_COLOR = "#00f2fe"
+CONFIDENCE_FILL = 'rgba(0,242,254,0.15)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(255,127,14,0.2)'
+
+# --- 1️⃣ ترجمة الـ Features ---
 feature_labels = {
     'dayofweek_sin': t("اليوم في الأسبوع (سين)", "Day of Week (Sin)"),
     'dayofweek_cos': t("اليوم في الأسبوع (كوس)", "Day of Week (Cos)"),
@@ -272,6 +277,7 @@ feature_labels = {
     'was_closed_yesterday': t("مغلق أمس", "Was Closed Yesterday")
 }
 
+# --- 2️⃣ دالة التوقع الذكي ---
 def generate_forecast(hist, h, scen_val, res_std):
     np.random.seed(42)
     preds, lows, ups = [], [], []
@@ -319,18 +325,18 @@ def generate_forecast(hist, h, scen_val, res_std):
         
     return preds, lows, ups, pd.DatetimeIndex(forecast_dates)
 
-# --- تنفيذ التوقع ---
+# --- 3️⃣ تنفيذ التوقع ---
 p, l, u, d = generate_forecast(df_s, horizon, scen, metrics['residuals_std'])
 
-# ================== Plotly Chart مع Hover مترجم ==================
+# --- 4️⃣ رسم Plotly ديناميكي حسب الثيم ---
 fig = go.Figure()
 
-# Actual
+# Actual Sales
 fig.add_trace(go.Scatter(
     x=df_s.index[-60:], y=df_s['sales'].tail(60),
     mode='lines+markers',
     name=t("المبيعات الفعلية", "Actual Sales"),
-    line=dict(color="#00f2fe"),
+    line=dict(color=NEON_COLOR),
     marker=dict(size=6),
     hovertemplate='%{x|%Y-%m-%d} <br>Sales: %{y:.0f}<extra></extra>'
 ))
@@ -350,7 +356,7 @@ fig.add_trace(go.Scatter(
     x=list(d)+list(d[::-1]),
     y=list(l)+list(u[::-1]),
     fill='toself',
-    fillcolor='rgba(255,127,14,0.2)',
+    fillcolor=CONFIDENCE_FILL,
     line=dict(color='rgba(255,255,255,0)'),
     hoverinfo="skip",
     showlegend=True,
@@ -365,58 +371,64 @@ fig.update_layout(
     hovermode="x unified",
 )
 
-# --- عرض الرسم مع Key فريد لتجنب DuplicateElementId ---
-st.plotly_chart(fig, use_container_width=True, key="forecast_chart_2026_dark")
+# --- 5️⃣ عرض الرسم مع Key ديناميكي حسب الثيم ---
+st.plotly_chart(fig, use_container_width=True, key=f"forecast_chart_{st.session_state['theme_state']}")
 
-# ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية - تعديل ENG.GODA) ==================
+# ================== 4️⃣ العرض البصري والنتائج (نسخة متوافقة مع Dark/Light) ==================
 
-# 1. استخدام المتغيرات المعرفة مسبقاً في الجزء الثاني
+# --- 1️⃣ إعدادات أساسية ---
 NEON_COLOR = "#00f2fe"
-# نعتمد على CHART_TEMPLATE المعرف في الجزء الثاني لضمان التزامن
+CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(0,242,254,0.15)'
+BAR_COLOR = "#00f2fe" if st.session_state['theme_state']=="Dark Mode" else "#0077ff"
+TEXT_COLOR = "#ffffff" if st.session_state['theme_state']=="Dark Mode" else "#31333F"
+BG_COLOR = "#0e1117" if st.session_state['theme_state']=="Dark Mode" else "#ffffff"
 
-# 2. العنوان الرئيسي للداشبورد
+# --- 2️⃣ العنوان الرئيسي ---
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
-# --- 1️⃣ الإحصائيات العليا (KPIs) ---
+# --- 3️⃣ الإحصائيات العليا (KPIs) ---
 p = np.nan_to_num(p)
 total_sales = float(np.sum(p))
 r2_safe = metrics.get("r2", 0.85)
 mape_safe = metrics.get("mape", 0.12)
 
 m1, m2, m3, m4 = st.columns(4)
-m1.metric(t("إجمالي المبيعات المتوقع", "Expected Total Sales"), f"${total_sales:,.0f}")
-m2.metric(t("دقة الموديل (R²)", "Model Accuracy"), f"{r2_safe:.3f}")
-m3.metric(t("نسبة الخطأ (MAPE)", "Error Rate"), f"{mape_safe*100:.1f}%")
-m4.metric(t("زمن المعالجة", "Inference Time"), "0.14 s")
+for m, label, val in zip([m1,m2,m3,m4],
+                         [t("إجمالي المبيعات المتوقع", "Expected Total Sales"),
+                          t("دقة الموديل (R²)", "Model Accuracy"),
+                          t("نسبة الخطأ (MAPE)", "Error Rate"),
+                          t("زمن المعالجة", "Inference Time")],
+                         [f"${total_sales:,.0f}", f"{r2_safe:.3f}", f"{mape_safe*100:.1f}%", "0.14 s"]):
+    m.metric(label, val)
 
 st.divider()
 
-# --- 2️⃣ الرسم البياني التفاعلي (Plotly) ---
+# --- 4️⃣ رسم المنحنى التفاعلي ---
 st.subheader(t("📈 منحنى التوقعات المستقبلية (2026)", "📈 Future Forecast Curve (2026)"))
 
-# تم توحيد الاسم إلى fig_trend لمنع NameError
 fig_trend = go.Figure()
 
-# إضافة نطاق الثقة
+# نطاق الثقة
 fig_trend.add_trace(go.Scatter(
     x=np.concatenate([d, d[::-1]]),
     y=np.concatenate([u, l[::-1]]),
     fill='toself',
-    fillcolor='rgba(0,242,254,0.15)' if st.session_state['theme_state']=="Light Mode" else 'rgba(0,242,254,0.3)',
+    fillcolor=CONFIDENCE_FILL,
     line=dict(color='rgba(0,0,0,0)'),
     hoverinfo="skip",
-    showlegend=False
+    showlegend=True,
+    name=t("نطاق الثقة", "Confidence Interval")
 ))
 
-# إضافة المبيعات التاريخية (آخر 60 يوم)
+# المبيعات التاريخية
 fig_trend.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
     name=t("مبيعات سابقة", "Actual Sales"),
-    line=dict(color="#94a3b8")
+    line=dict(color="#94a3b8"),
 ))
 
-# إضافة خط التوقع الذكي
+# توقع AI
 fig_trend.add_trace(go.Scatter(
     x=d,
     y=p,
@@ -426,19 +438,22 @@ fig_trend.add_trace(go.Scatter(
 
 fig_trend.update_layout(
     template=CHART_TEMPLATE,
-    hovermode="x unified",
-    margin=dict(l=20, r=20, t=30, b=20),
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(0,0,0,0)',
-    height=450
+    hovermode="x unified",
+    margin=dict(l=20, r=20, t=30, b=20),
+    title=dict(text=t("📈 توقع المبيعات القادمة", "📈 Upcoming Sales Forecast"), font=dict(color=TEXT_COLOR)),
+    xaxis=dict(title=t("التاريخ", "Date"), color=TEXT_COLOR),
+    yaxis=dict(title=t("المبيعات", "Sales"), color=TEXT_COLOR),
+    legend=dict(font=dict(color=TEXT_COLOR))
 )
 
-# عرض الرسمة باستخدام Key ديناميكي لضمان استجابة الـ Dark Mode
 st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_main_{st.session_state['theme_state']}")
 
-# --- 3️⃣ تقسيم العرض (العوامل المؤثرة والجدول التفصيلي) ---
+# --- 5️⃣ العوامل المؤثرة والجدول التفصيلي ---
 col_left, col_right = st.columns([1, 1.2])
 
+# === العوامل المؤثرة ===
 with col_left:
     st.subheader(t("🎯 العوامل المؤثرة", "🎯 Key Drivers"))
     feat_ar = {
@@ -457,17 +472,24 @@ with col_left:
     names = [feat_ar.get(n, n) for n in feature_names] if st.session_state['lang_state']=="عربي" else feature_names
     
     fig_imp = go.Figure(go.Bar(
-        x=importances, y=names, orientation='h', 
-        marker=dict(color=NEON_COLOR)
+        x=importances,
+        y=names,
+        orientation='h',
+        marker=dict(color=BAR_COLOR)
     ))
     fig_imp.update_layout(
-        template=CHART_TEMPLATE, height=400,
+        template=CHART_TEMPLATE,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
         yaxis={'categoryorder':'total ascending'},
         margin=dict(l=10, r=10, t=10, b=10),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+        title=dict(text=t("🎯 أهم العوامل المؤثرة", "🎯 Key Drivers Importance"), font=dict(color=TEXT_COLOR)),
+        xaxis=dict(color=TEXT_COLOR),
+        yaxis=dict(color=TEXT_COLOR)
     )
     st.plotly_chart(fig_imp, use_container_width=True, key=f"imp_{st.session_state['theme_state']}")
 
+# === الجدول التفصيلي ===
 with col_right:
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast"))
     res_df = pd.DataFrame({
@@ -477,12 +499,30 @@ with col_right:
         t("الأقصى", "Max"): u
     })
 
-    # ستايل الجدول (يتكيف مع الثيم)
-    st.dataframe(res_df.style.format({
+    # تعديل ستايل الجدول حسب الثيم
+    if st.session_state['theme_state'] == "Dark Mode":
+        table_style = res_df.style.set_table_styles([{
+            'selector': 'thead',
+            'props': [('background-color', '#1e2130'), ('color', '#ffffff')]
+        }, {
+            'selector': 'tbody',
+            'props': [('background-color', '#161b22'), ('color', '#ffffff')]
+        }])
+    else:
+        table_style = res_df.style.set_table_styles([{
+            'selector': 'thead',
+            'props': [('background-color', '#f0f2f6'), ('color', '#000000')]
+        }, {
+            'selector': 'tbody',
+            'props': [('background-color', '#ffffff'), ('color', '#000000')]
+        }])
+
+    st.dataframe(table_style.format({
         res_df.columns[1]: "${:,.0f}", 
         res_df.columns[2]: "${:,.0f}", 
         res_df.columns[3]: "${:,.0f}"
     }), use_container_width=True, hide_index=True, height=400)
+
 # ================== 5️⃣ تحليل توزيع الأخطاء (نسخة المهندس جودة المصححة) ==================
 st.markdown("---")
 st.subheader(t("🔍 تحليل جودة التوقعات (الأخطاء)", "🔍 Error Analysis"))
