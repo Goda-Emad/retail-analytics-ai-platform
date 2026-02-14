@@ -543,18 +543,18 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
+    # ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
-# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI
+# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI (متغير p من الأجزاء السابقة)
 if 'p' in locals() and len(p) > 0:
     # تجهيز الأرقام للتحليل
     total_sales_val = np.sum(p)
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # تحديد اللغة الحالية بشكل آمن لتجنب AttributeError
-    current_lang_name = st.session_state.get('lang', 'عربي')
+    # تحديد اللغة الحالية بشكل آمن
+    current_lang_name = st.session_state.get('lang', 'Arabic')
 
     # 1. كروت البيانات السريعة
     c1, c2 = st.columns(2)
@@ -565,26 +565,30 @@ if 'p' in locals() and len(p) > 0:
 
     st.markdown("---")
 
-    # 2. زر استدعاء Gemini (الاستدعاء المباشر عبر REST)
+    # 2. زر استدعاء Gemini (باستخدام دالة ask_gemini الاحترافية)
     if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final_rest"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
 
-            # إعداد البرومت
+            # إعداد البرومت الموجه للموديل
             prompt_text = f"""
             Act as a retail expert. 
-            Analyze: Store {selected_store}, Forecast ${total_sales_val:,.0f}, Growth {growth_val:+.1f}%. 
-            Provide 3 short business tips in {current_lang_name}.
+            The store {selected_store} has a forecasted total sales of ${total_sales_val:,.0f} 
+            and a growth rate of {growth_val:+.1f}%. 
+            Based on these numbers, provide 3 short, high-impact business recommendations in {current_lang_name}.
             """
 
-            # استدعاء Gemini عبر REST
+            # استدعاء Gemini عبر الدالة التي تعتمد على requests (REST)
             response_text = ask_gemini(prompt_text)
             
             st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
+            
             if response_text.startswith("❌"):
                 st.error(response_text)
+                st.info(t("نصيحة: تأكد من صحة المفتاح في Streamlit Secrets واختيار منطقة US-East.", 
+                          "Tip: Check API Key in Secrets and ensure Region is US-East."))
             else:
                 st.info(response_text)
-                st.success(t("✅ تم الاتصال بنجاح بمفتاح Gemini من Environment", "✅ Connected Successfully with GEMINI Key"))
+                st.success(t("✅ تم التحليل بنجاح - ENG.GODA Engine", "✅ Analysis Successful - ENG.GODA Engine"))
 
 else:
     st.warning(t("يرجى تشغيل التنبؤ أولاً للحصول على استشارة.", "Please run the forecast first to get AI advice."))
