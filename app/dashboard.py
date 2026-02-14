@@ -142,22 +142,32 @@ with st.sidebar:
         on_change=change_theme
     )
     st.divider()
-
-
-
-
 # ================== 4️⃣ العرض البصري والنتائج (Enhanced & Secure) ==================
 
-# --- ألوان ديناميكية حسب الثيم ---
+# ==== 0️⃣ حماية المتغيرات الأساسية ====
+selected_store = st.session_state.get("selected_store", "Main Store")  # اسم المتجر الافتراضي
+horizon = st.session_state.get("horizon", 30)                          # عدد الأيام للتوقع
+
+# توقعات المبيعات ونطاق الثقة
+if 'p' not in locals() or p is None:
+    p = np.zeros(horizon)
+if 'd' not in locals() or d is None:
+    d = pd.date_range(pd.Timestamp.now(), periods=horizon)
+if 'u' not in locals() or u is None:
+    u = np.zeros_like(p)
+if 'l' not in locals() or l is None:
+    l = np.zeros_like(p)
+
+# ==== 1️⃣ ألوان ديناميكية حسب الثيم ====
 NEON_COLOR = "#00f2fe"
 BAR_COLOR = "#00f2fe" if st.session_state['theme_state']=="Dark Mode" else "#0077ff"
 TEXT_COLOR = "#ffffff" if st.session_state['theme_state']=="Dark Mode" else "#31333F"
 CONFIDENCE_FILL = 'rgba(0,242,254,0.3)' if st.session_state['theme_state']=="Dark Mode" else 'rgba(0,242,254,0.15)'
 
-# --- العنوان الرئيسي ---
+# ==== 2️⃣ العنوان الرئيسي ====
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
-# --- KPIs ---
+# ==== 3️⃣ KPIs ====
 p_safe = np.nan_to_num(p)
 total_sales = float(np.sum(p_safe))
 r2_safe = metrics.get("r2", 0.85)
@@ -177,7 +187,7 @@ for col, (label, val) in zip(kpi_cols, kpi_values):
 
 st.divider()
 
-# --- الرسم التفاعلي مع Glass Effect ---
+# ==== 4️⃣ الرسم التفاعلي مع Glass Effect ====
 st.subheader(t("📈 منحنى التوقعات المستقبلية","📈 Future Forecast Curve"))
 
 fig_trend = go.Figure()
@@ -195,15 +205,16 @@ fig_trend.add_trace(go.Scatter(
 ))
 
 # المبيعات التاريخية
-hist_len = min(60, len(df_s))
-fig_trend.add_trace(go.Scatter(
-    x=df_s.index[-hist_len:],
-    y=df_s['sales'].tail(hist_len),
-    mode='lines+markers',
-    name=t("مبيعات سابقة","Actual Sales"),
-    line=dict(color="#94a3b8", width=2),
-    marker=dict(size=5)
-))
+hist_len = min(60, len(df_s)) if 'df_s' in locals() else 0
+if hist_len > 0:
+    fig_trend.add_trace(go.Scatter(
+        x=df_s.index[-hist_len:],
+        y=df_s['sales'].tail(hist_len),
+        mode='lines+markers',
+        name=t("مبيعات سابقة","Actual Sales"),
+        line=dict(color="#94a3b8", width=2),
+        marker=dict(size=5)
+    ))
 
 # توقع AI
 fig_trend.add_trace(go.Scatter(
@@ -232,6 +243,7 @@ fig_trend.update_layout(
 )
 
 st.plotly_chart(fig_trend, use_container_width=True, key=f"trend_main_{st.session_state['theme_state']}")
+
 
 # ================== 5️⃣ تحليل توزيع الأخطاء (Enhanced & Safe Version) ==================
 st.markdown("---")
