@@ -8,22 +8,25 @@ import google.generativeai as genai
 # إعدادات بيئة العمل لتخطي مشاكل الشبكة
 os.environ["GRPC_VERBOSITY"] = "ERROR"
 
-# إعداد الربط بالمفتاح الجديد (GODA) مع إجبار المسار العالمي
+# إعداد الربط بالمفتاح (GODA)
+# جربنا هنا نشيل client_options عشان نشوف لو المكتبة هتعرف المسار لوحدها مع الـ REST
 genai.configure(
     api_key="AIzaSyCJPsGXAUYUuC8XguAJ_t5AKRgCcQrTLz0",
-    transport='rest',
-    client_options={'api_endpoint': 'generativelanguage.googleapis.com'}
+    transport='rest'
 )
 
-# تعريف الموديل
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+# تغيير اسم الموديل لـ 'gemini-1.5-flash-latest' لضمان الوصول لأحدث نسخة مستقرة
+# أو استخدام 'gemini-1.5-pro' لو لسه الـ 404 موجودة
+try:
+    gemini_model = genai.GenerativeModel(model_name='gemini-1.5-flash-latest')
+except Exception:
+    gemini_model = genai.GenerativeModel(model_name='gemini-1.5-flash')
 
 # استكمال باقي الاستدعاءات
 try:
     from utils import run_backtesting
 except ImportError:
     pass
-
 # ================== إعدادات الصفحة ==================
 MODEL_VERSION = "v5.6 (Final Fix)"
 st.set_page_config(
