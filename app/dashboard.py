@@ -6,20 +6,15 @@ import joblib, os, time
 import requests
 
 # ================== إعداد Gemini بطريقة Production ==================
-
-# قراءة المفتاح من Environment Variable (مهم للأمان)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Streamlit Cloud Secret
 
 def ask_gemini(prompt_text):
     """
-    اتصال مباشر بـ Gemini عبر REST
-    بدون grpc
-    بدون مكتبات Google
-    مناسب لأي VPS أو Gaming Server
+    اتصال مباشر بـ Gemini عبر REST بدون أي مكتبات إضافية
+    مناسب لأي VPS أو Streamlit Cloud
     """
-
     if not GEMINI_API_KEY:
-        return "❌ GEMINI_API_KEY not found in environment variables."
+        return "❌ GEMINI_API_KEY not found. Please add it in Streamlit Secrets."
 
     url = (
         "https://generativelanguage.googleapis.com/"
@@ -27,30 +22,21 @@ def ask_gemini(prompt_text):
         f"?key={GEMINI_API_KEY}"
     )
 
-    headers = {
-        "Content-Type": "application/json"
-    }
-
     payload = {
         "contents": [
-            {
-                "parts": [
-                    {"text": prompt_text}
-                ]
-            }
+            {"parts": [{"text": prompt_text}]}
         ]
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=25)
-        response.raise_for_status()
-        data = response.json()
+        resp = requests.post(url, json=payload, timeout=25)
+        resp.raise_for_status()
+        data = resp.json()
         return data["candidates"][0]["content"]["parts"][0]["text"]
-
     except requests.exceptions.RequestException as e:
-        return f"❌ Connection Error: {str(e)}"
+        return f"❌ Connection Error: {e}"
     except Exception as e:
-        return f"❌ Unexpected Error: {str(e)}"
+        return f"❌ Unexpected Error: {e}"
 
 
 # ================== استكمال باقي الاستدعاءات ==================
@@ -102,31 +88,23 @@ st.markdown(
 # ================== تحميل الملفات الأساسية ==================
 @st.cache_resource
 def load_assets():
-    """
-    تحميل النموذج، السكيلر، أسماء الخصائص والبيانات الجاهزة.
-    يُستخدم cache_resource لتخزين الملفات وعدم إعادة تحميلها عند كل تحديث.
-    """
     try:
         curr_dir = os.path.dirname(os.path.abspath(__file__))
-
         model = joblib.load(os.path.join(curr_dir, "catboost_sales_model_10features.pkl"))
         scaler = joblib.load(os.path.join(curr_dir, "scaler_10features.pkl"))
         feature_names = joblib.load(os.path.join(curr_dir, "feature_names_10features.pkl"))
         df_raw = pd.read_parquet(os.path.join(curr_dir, "daily_sales_ready_10features.parquet"))
-
         return model, scaler, feature_names, df_raw
-
     except Exception as e:
         st.error(f"❌ فشل تحميل الملفات الأساسية: {e}")
         return None, None, None, None
 
-# تحميل الملفات مع رسالة انتظار لتحسين تجربة المستخدم
 with st.spinner("⏳ جاري تحميل النموذج والبيانات..."):
     model, scaler, feature_names, df_raw = load_assets()
 
-# التأكد من نجاح التحميل قبل الاستمرار
 if model is None:
     st.stop()
+
 
 # ================== 2️⃣ السايدبار، المعالجة، وحساب المقاييس الذكي ==================
 
@@ -553,6 +531,9 @@ if 'p' in locals() and len(p) > 0:
     
     # تحديد اللغة الحالية بشكل آمن لتجنب AttributeError
     current_lang_name = st.session_state.get('lang', 'عربي')
+    
+    # التأكد من وجود اسم المتجر
+    selected_store = st.session_state.get('selected_store', 'Default Store')
 
     # 1. كروت البيانات السريعة
     c1, c2 = st.columns(2)
@@ -593,10 +574,20 @@ with col_footer_1:
     st.markdown(f"👨‍💻 {t('تم التطوير بواسطة', 'Developed by')}: **ENG.GODA EMAD**")
 
 with col_footer_2:
-    st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>', unsafe_allow_html=True)
+    st.markdown(
+        f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank">'
+        f'<img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>',
+        unsafe_allow_html=True
+    )
 
 with col_footer_3:
-    st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>', unsafe_allow_html=True)
+    st.markdown(
+        f'<a href="https://github.com/Goda-Emad" target="_blank">'
+        f'<img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>',
+        unsafe_allow_html=True
+    )
 
 # تذييل الصفحة الأخير
-st.caption(f"--- \n {t('توقيت التقرير', 'Report Time')}: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026")
+st.caption(
+    f"--- \n {t('توقيت التقرير', 'Report Time')}: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026"
+)
