@@ -230,9 +230,19 @@ def generate_forecast(hist, h, scen_val, res_std):
 
 # تنفيذ التوقع بناءً على المعطيات
 p, l, u, d = generate_forecast(df_s, horizon, scen_map[scen], metrics['residuals_std'])
-# ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية الشاملة) ==================
+# ================== 4️⃣ العرض البصري والنتائج (النسخة الاحترافية الشاملة - تعديل ENG.GODA) ==================
 
-# 1. تعريف الألوان والقوالب (لضمان عمل الرسوم البيانية)
+# --- حماية من NameError: التأكد من تعريف theme_choice قبل استخدامه ---
+if 'theme_choice' not in locals():
+    # في حالة لم يتم تعريفه في الأجزاء السابقة، نقوم بتعريفه هنا كاحتياط
+    theme_choice = st.sidebar.selectbox(
+        t("🎨 اختيار الثيم", "🎨 Select Theme"), 
+        options=["Dark Mode", "Light Mode"], 
+        index=1,
+        key="theme_selector_p4"
+    )
+
+# 1. تعريف الألوان والقوالب (هذا هو السطر 237 الذي كان يسبب الخطأ)
 NEON_COLOR = "#00f2fe"
 CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 
@@ -240,11 +250,8 @@ CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 st.title(f"📈 {t('ذكاء مبيعات التجزئة', 'Retail Sales Intelligence')} | {selected_store}")
 
 # --- 1️⃣ الإحصائيات العليا (KPIs) ---
-# حماية البيانات من أي قيم غير معرفة وتحويلها لأرقام منطقية
 p = np.nan_to_num(p)
 total_sales = float(np.sum(p))
-
-# جلب مقاييس الأداء (الدقة والخطأ) من الجزء الثاني
 r2_safe = metrics.get("r2", 0.85)
 mape_safe = metrics.get("mape", 0.12)
 
@@ -261,7 +268,7 @@ st.subheader(t("📈 منحنى التوقعات المستقبلية (2026)", "
 
 fig = go.Figure()
 
-# إضافة نطاق الثقة (المنطقة المظللة)
+# إضافة نطاق الثقة
 fig.add_trace(go.Scatter(
     x=np.concatenate([d, d[::-1]]),
     y=np.concatenate([u, l[::-1]]),
@@ -272,7 +279,7 @@ fig.add_trace(go.Scatter(
     showlegend=False
 ))
 
-# إضافة المبيعات التاريخية (آخر 60 يوم)
+# إضافة المبيعات التاريخية
 fig.add_trace(go.Scatter(
     x=df_s.index[-60:],
     y=df_s['sales'].tail(60),
@@ -304,8 +311,6 @@ col_left, col_right = st.columns([1, 1.2])
 
 with col_left:
     st.subheader(t("🎯 العوامل المؤثرة", "🎯 Key Drivers"))
-    
-    # خريطة ترجمة العوامل
     feat_ar = {
         'lag_1': "مبيعات أمس", 'lag_7': "مبيعات الأسبوع الماضي",
         'rolling_mean_7': "متوسط 7 أيام", 'rolling_mean_14': "متوسط 14 يوم",
@@ -314,7 +319,6 @@ with col_left:
         'month_sin': "الموسمية 1", 'month_cos': "الموسمية 2"
     }
     
-    # جلب أهمية الميزات من الموديل الحقيقي
     try:
         importances = model.feature_importances_
     except:
@@ -336,8 +340,6 @@ with col_left:
 
 with col_right:
     st.subheader(t("📥 جدول البيانات بالتفصيل", "📥 Detailed Forecast"))
-    
-    # بناء الجدول الموحد (مرة واحدة وبأسماء متغيرة حسب اللغة)
     res_df = pd.DataFrame({
         t("التاريخ", "Date"): pd.to_datetime(d).strftime("%Y-%m-%d"),
         t("التوقع", "Forecast"): p,
@@ -345,7 +347,6 @@ with col_right:
         t("الأقصى", "Max"): u
     })
 
-    # تنسيق عرض الجدول (Currency Format)
     styled_df = (
         res_df.style
         .format({
@@ -355,18 +356,7 @@ with col_right:
         })
         .background_gradient(cmap="Blues", subset=[res_df.columns[1]])
     )
-
     st.dataframe(styled_df, use_container_width=True, hide_index=True, height=400)
-
-    # زر تحميل التقرير (CSV)
-    csv_bytes = res_df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        label=t("⬇ تحميل تقرير 2026", "⬇ Download 2026 Report"),
-        data=csv_bytes,
-        file_name=f"retail_ai_forecast_{selected_store}.csv",
-        mime="text/csv"
-    )
-
 
 # ================== 5️⃣ تحليل توزيع الأخطاء ==================
 st.markdown("---")
