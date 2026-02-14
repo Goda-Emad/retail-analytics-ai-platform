@@ -464,7 +464,7 @@ with col_err2:
     )
 
     st.plotly_chart(fig_res_time, use_container_width=True, key="error_time_chart")
-    )) 
+    
     # ================== 6️⃣ Scenario Comparison (Final Production Version - Corrected) ==================
 st.markdown("---")
 st.subheader(t("📊 مقارنة السيناريوهات الثلاثة", "📊 Scenario Comparison"))
