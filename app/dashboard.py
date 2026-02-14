@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 import joblib, os, time, requests
 
-# ================== 1️⃣ Gemini API (محسّن ENG.GODA) ==================
+# ================== 1️⃣ Gemini API ==================
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 def get_available_gemini_model():
@@ -83,11 +83,12 @@ with st.spinner(t("⏳ جاري تحميل الملفات الأساسية...", 
 if model is None:
     st.stop()
 
-# ================== 2️⃣ Sidebar & Theme ==================
+# ================== Sidebar & Theme ==================
 def apply_theme_css():
-    global CHART_TEMPLATE, NEON_COLOR
+    global CHART_TEMPLATE, NEON_COLOR, TEXT_COLOR
     CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state']=="Dark Mode" else "plotly"
     NEON_COLOR = "#00f2fe"
+    TEXT_COLOR = "white" if st.session_state['theme_state']=="Dark Mode" else "#1e293b"
     
     if st.session_state['theme_state'] == "Dark Mode":
         st.markdown("""
@@ -107,21 +108,20 @@ def apply_theme_css():
             </style>
         """, unsafe_allow_html=True)
 
-# تطبيق CSS عند التحميل
 apply_theme_css()
 
 # Sidebar
 with st.sidebar:
     st.header("⚙️ Configuration / الإعدادات")
     
-    # اختيار اللغة (ثابتة بدون تضارب)
+    # اختيار اللغة (ثابتة)
     selected_lang = st.selectbox(
         "🌐 Choose Language / اختر اللغة", 
         ["عربي", "English"],
         index=0 if st.session_state['lang_state']=="عربي" else 1,
         key="main_lang_selector"
     )
-    st.session_state['lang_state'] = selected_lang  # تحديث اللغة مباشرة
+    st.session_state['lang_state'] = selected_lang
 
     # اختيار الثيم
     theme_choice = st.selectbox(
@@ -133,7 +133,7 @@ with st.sidebar:
     if theme_choice != st.session_state['theme_state']:
         st.session_state['theme_state'] = theme_choice
         apply_theme_css()
-        st.experimental_rerun()   # إعادة تحميل الصفحة لتفعيل الثيم الجديد
+        st.experimental_rerun()
 
 st.sidebar.divider()
 
