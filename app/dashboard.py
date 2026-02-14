@@ -110,14 +110,16 @@ if model is None:
 
 # ================== 2️⃣ السايدبار الموحد، المترجم، والمعالجة الذكية ==================
 
-# 1. تهيئة حالة اللغة في الـ Session State لضمان استمرارية الترجمة
+# 1. تهيئة حالة اللغة والثيم لضمان التفاعل اللحظي
 if 'lang_state' not in st.session_state:
     st.session_state['lang_state'] = "عربي"
+if 'theme_state' not in st.session_state:
+    st.session_state['theme_state'] = "Light Mode"
 
 with st.sidebar:
     st.header("⚙️ Configuration / الإعدادات")
     
-    # 2. اختيار اللغة (المنبع الرئيسي لكل نصوص التطبيق)
+    # 2. اختيار اللغة
     selected_lang = st.selectbox(
         "🌐 Choose Language / اختر اللغة", 
         ["عربي", "English"],
@@ -126,61 +128,60 @@ with st.sidebar:
     )
     st.session_state['lang_state'] = selected_lang
 
-    # 3. دالة الترجمة الشاملة (t) - المحرك الذي تستخدمه في كل الأجزاء
+    # 3. دالة الترجمة الشاملة (t)
     def t(ar, en):
         return ar if st.session_state['lang_state'] == "عربي" else en
 
-    # 4. اختيار الثيم (حل مشكلة NameError وتوحيد التصميم)
+    # 4. اختيار الثيم (المعدل ليعمل لحظياً)
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"), 
         ["Dark Mode", "Light Mode"], 
-        index=1,
+        index=0 if st.session_state['theme_state'] == "Dark Mode" else 1,
         key="main_theme_selector"
     )
+    # تحديث الـ Session State فوراً عند التغيير
+    if theme_choice != st.session_state['theme_state']:
+        st.session_state['theme_state'] = theme_choice
+        st.rerun() # إعادة التشغيل لتطبيق الثيم على كل الرسوم البيانية
 
-# 5. تعريف متغيرات الثيم العالمية (لتستخدمها الرسوم البيانية في الأجزاء 4 و 5 و 6)
-CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
+# 5. تعريف متغيرات الثيم العالمية (تستخدم Session State لضمان الثبات)
+CHART_TEMPLATE = "plotly_dark" if st.session_state['theme_state'] == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
 
 st.sidebar.divider()
 
-# 6. رفع الملفات ومعالجة البيانات الخام
+# 6. رفع الملفات ومعالجة البيانات
 uploaded = st.sidebar.file_uploader(t("رفع ملف مبيعات جديد", "Upload Sales CSV"), type="csv", key="sales_uploader")
 
-# التحقق من مصدر البيانات (الملف المرفوع أو البيانات الافتراضية)
 if uploaded:
     df_active = pd.read_csv(uploaded)
 else:
-    # التأكد من وجود df_raw المحملة في الجزء الأول
     df_active = df_raw.copy() if 'df_raw' in locals() else pd.DataFrame()
 
-# تنظيف الأعمدة (حماية من أخطاء التنسيق)
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
-# 7. المعالجة الزمنية واختيار المتجر (تأمين المتغير df_s)
+# 7. المعالجة الزمنية واختيار المتجر
 if not df_active.empty:
     if 'date' in df_active.columns:
         df_active['date'] = pd.to_datetime(df_active['date'])
         df_active = df_active.sort_values('date').set_index('date')
     
-    # قائمة المتاجر المتاحة
     store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
     selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list, key="store_selector")
     
-    # --- تعريف df_s بشكل صريح لمنع NameError في السطر 189 ---
     if 'store_id' in df_active.columns:
         df_s = df_active[df_active['store_id'] == selected_store].copy()
     else:
         df_s = df_active.copy()
 
-    # إعدادات التوقع والسيناريوهات
     horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14, key="horizon_slider")
     
+    # القاموس الديناميكي للسيناريوهات (حل مشكلة KeyError)
     scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
     scen_label = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"), key="scenario_slider")
     scen = scen_map[scen_label]
 
-    # --- 8. دالة حساب المقاييس (المحرك الداخلي) ---
+    # --- 8. دالة حساب المقاييس ---
     def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
         try:
             test_data = df_val.tail(15).copy()
@@ -204,12 +205,10 @@ if not df_active.empty:
         except:
             return {"r2": 0.854, "mape": 0.115, "residuals_std": 1000.0}
 
-    # تشغيل الحسابات النهائية (السطر 189 المسبق للخطأ)
-    # الآن df_s مضمونة الوجود في الذاكرة
     metrics = get_dynamic_metrics(df_s, model, scaler, feature_names)
 
 else:
-    st.error("⚠️ فشل في تحميل البيانات. يرجى رفع ملف CSV صحيح يحتوي على عمود 'sales'.")
+    st.error("⚠️ فشل في تحميل البيانات.")
     st.stop()
 
 # ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة - تصحيح ENG.GODA) ==================
