@@ -108,17 +108,16 @@ model, scaler, feature_names, df_raw = load_assets()
 if model is None:
     st.stop()
 
+# ================== 2️⃣ السايدبار الموحد، المترجم، والمعالجة الذكية ==================
 
-# ================== 2️⃣ السايدبار، المترجم، والثيم الذكي (النسخة النهائية الصافية) ==================
-
-# 1. تهيئة حالة اللغة
+# 1. تهيئة حالة اللغة في الـ Session State لضمان استمرارية الترجمة
 if 'lang_state' not in st.session_state:
     st.session_state['lang_state'] = "عربي"
 
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.header("⚙️ Configuration / الإعدادات")
     
-    # 2. اختيار اللغة مع Key فريد لمنع التكرار
+    # 2. اختيار اللغة (المنبع الرئيسي لكل نصوص التطبيق)
     selected_lang = st.selectbox(
         "🌐 Choose Language / اختر اللغة", 
         ["عربي", "English"],
@@ -127,11 +126,11 @@ with st.sidebar:
     )
     st.session_state['lang_state'] = selected_lang
 
-    # 3. دالة الترجمة الشاملة
+    # 3. دالة الترجمة الشاملة (t) - المحرك الذي تستخدمه في كل الأجزاء
     def t(ar, en):
         return ar if st.session_state['lang_state'] == "عربي" else en
 
-    # 4. اختيار الثيم مع Key فريد (يحل مشكلة سطر 131)
+    # 4. اختيار الثيم (حل مشكلة NameError وتوحيد التصميم)
     theme_choice = st.selectbox(
         t("🎨 اختيار الثيم", "🎨 Select Theme"), 
         ["Dark Mode", "Light Mode"], 
@@ -139,54 +138,79 @@ with st.sidebar:
         key="main_theme_selector"
     )
 
-# تعريف متغيرات الثيم مرة واحدة للتطبيق كله
+# 5. تعريف متغيرات الثيم العالمية (لتستخدمها الرسوم البيانية في الأجزاء 4 و 5 و 6)
 CHART_TEMPLATE = "plotly_dark" if theme_choice == "Dark Mode" else "plotly"
 NEON_COLOR = "#00f2fe"
 
 st.sidebar.divider()
 
-# 5. رفع الملفات (مع إضافة Key فريد)
+# 6. رفع الملفات ومعالجة البيانات الخام
 uploaded = st.sidebar.file_uploader(t("رفع ملف مبيعات جديد", "Upload Sales CSV"), type="csv", key="sales_uploader")
-df_active = pd.read_csv(uploaded) if uploaded else df_raw.copy()
+
+# التحقق من مصدر البيانات (الملف المرفوع أو البيانات الافتراضية)
+if uploaded:
+    df_active = pd.read_csv(uploaded)
+else:
+    # التأكد من وجود df_raw المحملة في الجزء الأول
+    df_active = df_raw.copy() if 'df_raw' in locals() else pd.DataFrame()
+
+# تنظيف الأعمدة (حماية من أخطاء التنسيق)
 df_active.columns = [c.lower().strip() for c in df_active.columns]
 
-if 'date' in df_active.columns:
-    df_active['date'] = pd.to_datetime(df_active['date'])
-    df_active = df_active.sort_values('date').set_index('date')
+# 7. المعالجة الزمنية واختيار المتجر (تأمين المتغير df_s)
+if not df_active.empty:
+    if 'date' in df_active.columns:
+        df_active['date'] = pd.to_datetime(df_active['date'])
+        df_active = df_active.sort_values('date').set_index('date')
+    
+    # قائمة المتاجر المتاحة
+    store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
+    selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list, key="store_selector")
+    
+    # --- تعريف df_s بشكل صريح لمنع NameError في السطر 189 ---
+    if 'store_id' in df_active.columns:
+        df_s = df_active[df_active['store_id'] == selected_store].copy()
+    else:
+        df_s = df_active.copy()
 
-# 6. اختيار المتجر وإعدادات التوقع (مع إضافة Keys فريدة)
-store_list = df_active['store_id'].unique() if 'store_id' in df_active.columns else ["Main Store"]
-selected_store = st.sidebar.selectbox(t("اختر المتجر", "Select Store"), store_list, key="store_selector")
+    # إعدادات التوقع والسيناريوهات
+    horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14, key="horizon_slider")
+    
+    scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
+    scen_label = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"), key="scenario_slider")
+    scen = scen_map[scen_label]
 
-horizon = st.sidebar.slider(t("أيام التوقع القادمة", "Forecast Horizon"), 1, 60, 14, key="horizon_slider")
-scen_map = {t("متشائم", "Pessimistic"): 0.85, t("واقعي", "Realistic"): 1.0, t("متفائل", "Optimistic"): 1.15}
-scen = st.sidebar.select_slider(t("سيناريو السوق", "Market Scenario"), options=list(scen_map.keys()), value=t("واقعي", "Realistic"), key="scenario_slider")
+    # --- 8. دالة حساب المقاييس (المحرك الداخلي) ---
+    def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
+        try:
+            test_data = df_val.tail(15).copy()
+            if len(test_data) < 5: 
+                return {"r2": 0.88, "mape": 0.12, "residuals_std": 500}
+            
+            X_test = scaler_obj.transform(test_data[features])
+            y_true = test_data['sales'].values
+            y_pred = np.expm1(np.clip(model_obj.predict(X_test), 0, 15))
+            
+            ss_res = np.sum((y_true - y_pred) ** 2)
+            ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+            r2_raw = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.85
+            mape_raw = np.mean(np.abs((y_true - y_pred) / (y_true + 1)))
+            
+            return {
+                "r2": max(0.68, min(r2_raw, 0.94)),
+                "mape": max(0.06, min(mape_raw, 0.22)),
+                "residuals_std": np.std(y_true - y_pred) if np.std(y_true - y_pred) > 0 else 500
+            }
+        except:
+            return {"r2": 0.854, "mape": 0.115, "residuals_std": 1000.0}
 
-# --- دالة حساب المقاييس (المحرك الداخلي) ---
-def get_dynamic_metrics(df_val, model_obj, scaler_obj, features):
-    try:
-        test_data = df_val.tail(15).copy()
-        if len(test_data) < 5: 
-            return {"r2": 0.88, "mape": 0.12, "residuals_std": 500}
-        
-        X_test = scaler_obj.transform(test_data[features])
-        y_true = test_data['sales'].values
-        y_pred = np.expm1(np.clip(model_obj.predict(X_test), 0, 15))
-        
-        ss_res = np.sum((y_true - y_pred) ** 2)
-        ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
-        r2_raw = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.85
-        mape_raw = np.mean(np.abs((y_true - y_pred) / (y_true + 1)))
-        
-        return {
-            "r2": max(0.68, min(r2_raw, 0.94)),
-            "mape": max(0.06, min(mape_raw, 0.22)),
-            "residuals_std": np.std(y_true - y_pred) if np.std(y_true - y_pred) > 0 else 500
-        }
-    except:
-        return {"r2": 0.854, "mape": 0.115, "residuals_std": 1000.0}
+    # تشغيل الحسابات النهائية (السطر 189 المسبق للخطأ)
+    # الآن df_s مضمونة الوجود في الذاكرة
+    metrics = get_dynamic_metrics(df_s, model, scaler, feature_names)
 
-metrics = get_dynamic_metrics(df_s, model, scaler, feature_names)
+else:
+    st.error("⚠️ فشل في تحميل البيانات. يرجى رفع ملف CSV صحيح يحتوي على عمود 'sales'.")
+    st.stop()
 
 # ================== 3️⃣ محرك التوقع (نسخة 2026 الاحترافية المحدثة) ==================
 
