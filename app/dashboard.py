@@ -5,27 +5,22 @@ import plotly.graph_objects as go
 import joblib, os, time
 import requests
 
-# ================== إعداد Gemini بطريقة Production ==================
+# ================== 1️⃣ إعداد Gemini عبر REST API (تعديل ENG.GODA) ==================
 
-# قراءة المفتاح من Streamlit Secrets (آمن جداً)
+# قراءة المفتاح من Streamlit Secrets
+# تأكد أنك كتبت GEMINI_API_KEY في خانة Secrets بالمتصفح
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
 def ask_gemini(prompt_text):
     """
-    اتصال مباشر بـ Gemini عبر REST
-    بدون grpc
-    بدون مكتبات Google
-    مناسب لأي VPS أو Streamlit Cloud
+    دالة لاستدعاء Gemini باستخدام مكتبة requests مباشرة.
+    تستخدم نسخة v1 المستقرة لتجنب أخطاء 404.
     """
-
     if not GEMINI_API_KEY:
-        return "❌ GEMINI_API_KEY not found. Please add it in Streamlit Secrets."
+        return "❌ GEMINI_API_KEY غير موجود في الإعدادات (Secrets)."
 
-    url = (
-        "https://generativelanguage.googleapis.com/"
-        "v1beta/models/gemini-1.5-flash:generateContent"
-        f"?key={GEMINI_API_KEY}"
-    )
+    # الرابط المستقر لنسخة v1
+    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
 
     headers = {
         "Content-Type": "application/json"
@@ -42,93 +37,60 @@ def ask_gemini(prompt_text):
     }
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=25)
-        response.raise_for_status()
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        # إرسال الطلب
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        
+        # في حالة نجاح الطلب
+        if response.status_code == 200:
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        
+        # في حالة وجود خطأ من جوجل (مثل 404 أو 400)
+        else:
+            return f"❌ خطأ من جوجل ({response.status_code}): {response.text}"
 
     except requests.exceptions.RequestException as e:
-        return f"❌ Connection Error: {str(e)}"
+        return f"❌ فشل الاتصال بالسيرفر: {str(e)}"
     except Exception as e:
-        return f"❌ Unexpected Error: {str(e)}"
+        return f"❌ خطأ غير متوقع: {str(e)}"
 
+# ================== 2️⃣ استكمال باقي الاستدعاءات والتحميل ==================
 
-# ================== استكمال باقي الاستدعاءات ==================
 try:
     from utils import run_backtesting
 except ImportError:
     pass
 
-# ================== إعدادات الصفحة ==================
-MODEL_VERSION = "v5.6 (Final Fix)"
+# إعدادات الصفحة
+MODEL_VERSION = "v5.7 (Final Stable)"
 st.set_page_config(
     page_title=f"Retail AI {MODEL_VERSION}",
     layout="wide",
     page_icon="📈"
 )
 
-# ================== اختيار الثيم ==================
-theme_choice = st.sidebar.selectbox(
-    "🎨 اختيار الثيم / Theme",
-    options=["Dark Mode", "Light Mode"],
-    index=1  # Light Mode افتراضي
-)
+# دالة مساعدة للترجمة (لو كنت بتستخدمها في باقي الكود)
+def t(ar, en):
+    return ar if st.session_state.get('lang', 'عربي') == 'عربي' else en
 
-# ================== تهيئة الثيم ==================
-if theme_choice == "Dark Mode":
-    BG_STYLE = "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
-    CHART_TEMPLATE = "plotly_dark"
-    NEON_COLOR = "#00f2fe"
-    TEXT_COLOR = "white"
-else:
-    BG_STYLE = "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)"
-    CHART_TEMPLATE = "plotly_white"
-    NEON_COLOR = "#3b82f6"
-    TEXT_COLOR = "#1e293b"
-
-# تطبيق الخلفية ولون النص
-st.markdown(
-    f"""
-    <style>
-        .stApp {{
-            background: {BG_STYLE};
-            color: {TEXT_COLOR};
-        }}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# ================== تحميل الملفات الأساسية ==================
+# تحميل الملفات الأساسية
 @st.cache_resource
 def load_assets():
-    """
-    تحميل النموذج، السكيلر، أسماء الخصائص والبيانات الجاهزة.
-    يُستخدم cache_resource لتخزين الملفات وعدم إعادة تحميلها عند كل تحديث.
-    """
     try:
         curr_dir = os.path.dirname(os.path.abspath(__file__))
-
         model = joblib.load(os.path.join(curr_dir, "catboost_sales_model_10features.pkl"))
         scaler = joblib.load(os.path.join(curr_dir, "scaler_10features.pkl"))
         feature_names = joblib.load(os.path.join(curr_dir, "feature_names_10features.pkl"))
         df_raw = pd.read_parquet(os.path.join(curr_dir, "daily_sales_ready_10features.parquet"))
-
         return model, scaler, feature_names, df_raw
-
     except Exception as e:
-        st.error(f"❌ فشل تحميل الملفات الأساسية: {e}")
+        st.error(f"❌ فشل تحميل الملفات: {e}")
         return None, None, None, None
 
-# تحميل الملفات مع رسالة انتظار لتحسين تجربة المستخدم
-with st.spinner("⏳ جاري تحميل النموذج والبيانات..."):
-    model, scaler, feature_names, df_raw = load_assets()
+model, scaler, feature_names, df_raw = load_assets()
 
-# التأكد من نجاح التحميل قبل الاستمرار
 if model is None:
     st.stop()
-
-
 
 # ================== 2️⃣ السايدبار، المعالجة، وحساب المقاييس الذكي ==================
 
@@ -543,79 +505,82 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-    # ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
+ # ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
-# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI (متغير p من الأجزاء السابقة)
+# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI (متغير p هو مخرجات التنبؤ)
 if 'p' in locals() and len(p) > 0:
-    # تجهيز الأرقام للتحليل
+    # 1. تجهيز الأرقام للتحليل الاستراتيجي
     total_sales_val = np.sum(p)
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # تحديد اللغة الحالية بشكل آمن
-    current_lang_name = st.session_state.get('lang', 'Arabic')
+    # تحديد لغة الرد بناءً على اختيار المستخدم
+    current_lang_name = st.session_state.get('lang', 'عربي')
 
-    # 1. كروت البيانات السريعة
+    # عرض ملخص سريع للأرقام قبل الاستشارة
     c1, c2 = st.columns(2)
     with c1:
         st.metric(t("إجمالي المتوقع", "Total Forecast"), f"${total_sales_val:,.0f}")
     with c2:
-        st.metric(t("نمو المبيعات", "Sales Growth"), f"{growth_val:+.1f}%")
+        st.metric(t("نمو المبيعات المتوقع", "Projected Growth"), f"{growth_val:+.1f}%")
 
     st.markdown("---")
 
-    # 2. زر استدعاء Gemini (باستخدام دالة ask_gemini الاحترافية)
+    # 2. زر استدعاء Gemini (باستخدام دالة ask_gemini المعدلة في الجزء الأول)
     if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final_rest"):
-        with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
+        with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً عبر ENG.GODA Engine...", "🧠 Analyzing data strategically...")):
 
-            # إعداد البرومت الموجه للموديل
+            # صياغة البرومت الموجه للموديل
             prompt_text = f"""
-            Act as a retail expert. 
-            The store {selected_store} has a forecasted total sales of ${total_sales_val:,.0f} 
-            and a growth rate of {growth_val:+.1f}%. 
-            Based on these numbers, provide 3 short, high-impact business recommendations in {current_lang_name}.
+            Act as a retail business expert. 
+            Analyze the following data for Store {selected_store}:
+            - Total Forecasted Sales: ${total_sales_val:,.0f}
+            - Expected Growth Rate: {growth_val:+.1f}%
+            Provide 3 specific, actionable business recommendations to improve performance.
+            Respond in {current_lang_name} language only.
             """
 
-            # استدعاء Gemini عبر الدالة التي تعتمد على requests (REST)
+            # استدعاء Gemini (الدالة الموجودة في الجزء الأول)
             response_text = ask_gemini(prompt_text)
             
             st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
             
             if response_text.startswith("❌"):
                 st.error(response_text)
-                st.info(t("نصيحة: تأكد من صحة المفتاح في Streamlit Secrets واختيار منطقة US-East.", 
-                          "Tip: Check API Key in Secrets and ensure Region is US-East."))
+                st.warning(t("تأكد من تحديث GEMINI_API_KEY في صفحة Secrets.", "Please update GEMINI_API_KEY in Secrets page."))
             else:
                 st.info(response_text)
-                st.success(t("✅ تم التحليل بنجاح - ENG.GODA Engine", "✅ Analysis Successful - ENG.GODA Engine"))
+                st.success(t("✅ تم التحليل بنجاح بواسطة ذكاء ENG.GODA الاصطناعي", "✅ Analysis Successful by ENG.GODA AI"))
 
 else:
-    st.warning(t("يرجى تشغيل التنبؤ أولاً للحصول على استشارة.", "Please run the forecast first to get AI advice."))
+    st.warning(t("يرجى اختيار المتجر وتشغيل التنبؤ أولاً للحصول على استشارة.", "Please select a store and run forecast first."))
 
 # ================== 🔗 الروابط المهنية (ENG.GODA EMAD Edition) ==================
+st.write("")
 st.write("---")
-col_footer_1, col_footer_2, col_footer_3 = st.columns([2, 1, 1])
+col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
 
-with col_footer_1:
+with col_f1:
     st.markdown(f"👨‍💻 {t('تم التطوير بواسطة', 'Developed by')}: **ENG.GODA EMAD**")
+    st.caption(f"Retail Analytics AI Platform | {MODEL_VERSION}")
 
-with col_footer_2:
+with col_f2:
     st.markdown(
         f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank">'
         '<img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>',
         unsafe_allow_html=True
     )
 
-with col_footer_3:
+with col_f3:
     st.markdown(
         f'<a href="https://github.com/Goda-Emad" target="_blank">'
         '<img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>',
         unsafe_allow_html=True
     )
 
-# تذييل الصفحة الأخير
+# تذييل الصفحة الزمني
 st.caption(
     f"--- \n {t('توقيت التقرير', 'Report Time')}: "
-    f"{pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026"
+    f"{pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © 2026 ENG.GODA EMAD"
 )
