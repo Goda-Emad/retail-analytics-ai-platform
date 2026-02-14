@@ -502,45 +502,51 @@ with st.expander(t("🛠️ كيف يضمن النظام واقعية التوق
         "يستخدم النظام تقنية الـ Guardrail لمنع القفزات غير المنطقية ناتجة عن التغذية المرتدة للبيانات (Feedback Loop).",
         "The system uses Guardrail technology to prevent unrealistic spikes caused by data feedback loops."
     )) 
-# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) ==================
+# ================== 7️⃣ المساعد الاستراتيجي (AI Strategic Consultant) - النسخة النهائية ==================
 st.divider()
 st.header(t("🤖 مستشار الذكاء الاصطناعي الاستراتيجي", "🤖 AI Strategic Consultant"))
 
-# التأكد من وجود بيانات للتنبؤ (p هو مصفوفة التوقعات عندك)
+# التأكد من وجود بيانات للتنبؤ قبل تشغيل الـ AI
 if 'p' in locals() and len(p) > 0:
+    # تجهيز الأرقام للتحليل
     total_sales_val = np.sum(p)
     growth_val = ((p[-1] - p[0]) / p[0]) * 100 if p[0] != 0 else 0
     
-    # عرض المؤشرات المالية
+    # تحديد اللغة الحالية بشكل آمن لتجنب AttributeError
+    current_lang_name = st.session_state.get('lang', 'عربي')
+
+    # 1. كروت البيانات السريعة
     c1, c2 = st.columns(2)
     with c1: st.metric(t("إجمالي المتوقع", "Total Forecast"), f"${total_sales_val:,.0f}")
     with c2: st.metric(t("نمو المبيعات", "Sales Growth"), f"{growth_val:+.1f}%")
 
     st.markdown("---")
 
-    # زر استدعاء Gemini (مهم: لاحظ استدعاء gemini_model)
-    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final"):
+    # 2. زر استدعاء Gemini (الاستدعاء المباشر)
+    if st.button(t("✨ استشارة الذكاء الاصطناعي", "✨ Consult AI Assistant"), key="ai_btn_final_stable"):
         with st.spinner(t("🧠 جارٍ تحليل البيانات استراتيجياً...", "🧠 Analyzing data strategically...")):
             
+            # البرومت الموجه للموديل
             prompt_text = f"""
             Act as a retail expert. 
             Analyze: Store {selected_store}, Forecast ${total_sales_val:,.0f}, Growth {growth_val:+.1f}%. 
-            Provide 3 short business tips in {st.session_state.lang}.
+            Provide 3 short business tips in {current_lang_name}.
             """
 
             try:
-                # منادي على gemini_model اللي عرفناه في الجزء الأول فوق
-                # لاحظ: ممنوع نكتب transport هنا لأننا كتبناها فوق خلاص
+                # استدعاء الموديل المعرف في الجزء الأول (بدون كلمة transport هنا)
                 response = gemini_model.generate_content(prompt_text)
                 
                 st.markdown(f"### 🎯 {t('الرؤية الاستراتيجية لـ Gemini', 'Gemini Strategic Insights')}")
                 st.info(response.text)
-                st.success(t("✅ تم التحليل بنجاح بمفتاح GODA", "✅ Analysis Successful with GODA Key"))
+                st.success(t("✅ تم الاتصال بنجاح بمفتاح جودة (GODA)", "✅ Connected Successfully with GODA Key"))
                 
             except Exception as e:
                 st.error(t("❌ فشل الاتصال بخوادم Google AI.", "❌ Connection Failed."))
-                with st.expander("🛠️ تشخيص العطل التقني (Diagnostic Log)"):
+                with st.expander("🛠️ تفاصيل العطل (Diagnostic)"):
                     st.code(str(e))
+else:
+    st.warning(t("يرجى تشغيل التنبؤ أولاً للحصول على استشارة.", "Please run the forecast first to get AI advice."))
 
 # ================== 🔗 الروابط المهنية (ENG.GODA EMAD Edition) ==================
 st.write("---")
@@ -550,9 +556,12 @@ with col_footer_1:
     st.markdown(f"👨‍💻 {t('تم التطوير بواسطة', 'Developed by')}: **ENG.GODA EMAD**")
 
 with col_footer_2:
+    # رابط لينكد إن الخاص بك
     st.markdown(f'<a href="https://www.linkedin.com/in/goda-emad" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-%230077B5.svg?style=for-the-badge&logo=linkedin&logoColor=white"></a>', unsafe_allow_html=True)
 
 with col_footer_3:
+    # رابط جيت هاب الخاص بك
     st.markdown(f'<a href="https://github.com/Goda-Emad" target="_blank"><img src="https://img.shields.io/badge/GitHub-100000?style=for-the-badge&logo=github&logoColor=white"></a>', unsafe_allow_html=True)
 
+# تذييل الصفحة الأخير
 st.caption(f"--- \n {t('توقيت التقرير', 'Report Time')}: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')} | © ENG.GODA EMAD 2026")
